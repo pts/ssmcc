@@ -4,60 +4,63 @@ test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an i
 unset LANG LANGUAGE  # For deterministic output.
 export LC_ALL=C  # For deterministic output. Typically not needed.
 export TZ=GMT  # For deterministic output. Typically not needed.
+export INCLUDE=/dev/null/missing  # Don't let the OpenWatcom v2 C compiler find the OpenWatcom v2 libc include files (*.h).
+export LIB=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) find the OpenWatcom v2 libc library files (*.lib).
+export LIBRARY=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) find the OpenWatcom v2 libc library files (*.lib). (Does this make any difference?)
+export WLINK=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) find its own config file. (Does this make any difference?)
+export WLINK_LNK=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) find its own config file. Typical default value is WLINK_LNK=wlink.lnk
+#unset WATCOM  # Don't let the OpenWatcom v2 linker (WLINK) find its own config file (so `owcc -bdos' and `wlink form dos' won't work). Typical default location is $WATCOM/$WLINK_LNK
 
-# owcc -v -bdos -fno-stack-check -mcmodel=s -fnostdlib -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall -c -o h.o h.c
-#owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall -o h.exe libc0.o h.c
+# Figure out the target operating system ("$os").
+case "$1" in
+ -bminix | -bminixi86) shift ;;
+ -belks) shift ;;
+ *) echo "fatal: please specify -bminix or -belks first" >&2; exit 2 ;;
+esac
+ 
+# Figure out the output executable program filename ($ofn) from the command-line arguments ("$@").
+next=
+for arg in "$@"; do
+  case "$next" in o) ofn="$arg"; next= ;; esac
+  case "$arg" in -o) next=o ;; -o*) ofn="${arg#??}" ;; esac
+done
+case "$ofn" in "") ofn=a.out; set x -o "$ofn" "$@"; shift ;; esac
 
-#set x -o h.exe h.c; shift
-set x -o h h.c; shift
-
-owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall "$@"  >ssmcc.err 2>&1
-# Compile a list of undefined symbols. Example: udefs="-Wc,-dU_cstart_ -Wc,-dU_write -Wc,-dU__argc"
-udefs="$(perl -e 'my $xc = 1; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
+# Compile the program using the OpenWatcom v2 C compiler (wcc) started by the OpenWatcom v2 C compiler Unix driver (owcc).
+owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s "$@"  >ssmcc.err 2>&1
+# Compile a list of undefined symbols. Example: undefs="-Wc,-dU_cstart_ -Wc,-dU_write -Wc,-dU__argc"
+undefs="$(perl -e 'my $xc = 1; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
 if test "$xcu" != 0; then cat <ssmcc.err >&2; rm -f ssmcc.err; exit 2; fi  # No undefined symbols found.
 rm -f ssmcc.err
-owcc -bdos -s -mcmodel=s -c -Wc,-dSSMCC $udefs -o ssmcc.o ssmcc.asm || exit "$?"
+owcc -bdos -s -mcmodel=s -c -Wc,-dSSMCC $undefs -o ssmcc.o ssmcc.asm || exit "$?"
 # !! -U__DOS__ etc.
-owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall ssmcc.o "$@" || exit "$?"
+# ssmcc.o must be the first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
+owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s ssmcc.o "$@" || exit "$?"
 
-perl -we 'use integer; use strict;  # Replace the DOS MZ header with an Minix i86 a.out header.
+# Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
+perl -we 'use integer; use strict;
     my $fn = $ARGV[0]; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
     die("fatal: error opening: $fn\n") if !open(F, "+< $fno");
-    die(2) if (sysread(F, $_, 0x22) or 0) != 0x22;
-    die(3) if !(my $size = sysseek(F, 0, 2));  # Rewind for writing below.
-    die(4) if !sysseek(F, 0, 0);  # Rewind for writing below.
-    my($signature, $lastsize, $nblocks, $nreloc, $hdrsize, $minalloc, $maxalloc, $ss, $sp, $checksum, $ip, $cs, $relocpos, $noverlay, $skip14, $skip15, $edata) = unpack("a2v16", $_);
-    die(0) if $signature ne "MZ";
-    die(1) if $lastsize > 0x200;
-    die(2) if $nblocks == 0;
-    die(3) if $nreloc != 0;
-    die(4) if $hdrsize != 2;
-    die(5) if $ss == 0;
-    die(6) if $checksum != 0;
-    die(7) if $cs != 0;
-    die(8) if $ip != 0;
-    my $a_text_data_bss = ($ss << 4 | $sp) - 1;
-    my $a_text_data = (($size + 1) & ~1) - 0x20;
-    my $a_data = $edata;
-    my $a_text = $a_text_data - $a_data;
-    my $a_bss = $a_text_data_bss - $a_text_data;
-    # !! Check all possible alingment combinations above. !! Also check empty.
-    printf(STDERR "info: a_text=0x%x a_data=0x%x a_bss=0x%x\n", $a_text, $a_data, $a_bss);  # !! Check for negative etc.
-    my $a_magic = "\x01\x03";
-    my $a_flags = 0x20;  # Separate I&D.
+    die("fatal: error reeding header: $fn\n") if (sysread(F, $_, 0x22) or 0) != 0x22;
+    die("fatal: error getting file size: $fn\n") if !(my $size = sysseek(F, 0, 2));  # Rewind for writing below.
+    die("fatal: error seeking to start of file: $fn\n") if !sysseek(F, 0, 0);  # Rewind for writing below.
+    my($signature, $lastsize, $nblocks, $nreloc, $hdrsize, $minalloc, $maxalloc, $ss, $sp, $checksum, $ip, $cs, $relocpos, $noverlay, $edata) = unpack("a2v13x4v", $_);
+    die("fatal: missing DOS MZ .exe signature: $fn\n") if $signature ne "MZ";
+    die("fatal: bad DOS MZ .exe header: $fn\n") if $lastsize > 0x200 or $nblocks == 0 or $nreloc != 0 or $hdrsize != 2 or $ss == 0 or $cs != 0 or $ip != 0;
+    my $a_magic = "\x01\x03";  # Minix and ELKS a.out header signature (magic).
+    my $a_flags = 0x20;  # Executable program with separate I&D. Corresponds to `owcc -mcmodel=s` (small model).
     my $a_cpu = 4;  # A_I8086 == 4; A_I80386 == 0x10.
     my $a_hdrlen = 0x20;
     my $a_unused = 0;  # Must be 0 for Minix.
     my $a_version = 0;  # Must be 0 for Minix.
-    my $a_entry = 0;  # Must be 0 Mfor Minix 1.5.10.
+    my $a_text = ((($size + 1) & ~1) - 0x20) - $edata;
+    my $a_data = $edata;
+    my $a_bss = (($ss << 4 | $sp) - 1) - ((($size + 1) & ~1) - 0x20);  # -1 is because of `wlink op stack=1`.
+    my $a_entry = 0;  # Must be 0 for Minix 1.5.10.
     my $a_total = 0x10000;  # Typical to maximize the data segment.
     my $a_syms = 0;  # Exeutable stripped.
-    my $instr2 = "\xfc\x59";  # cld ++ push cx.
+    my $instr2 = "\xfc\x59";  # Put `cld ++ push cx` back to the beginning of _cstart_.
     $_ = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
-    die(2) if (syswrite(F, $_, 0x22) or 0) != 0x22;
-    ' h
-chmod +x h
-
-: "$0" OK.
-
-# !! CONST is not PARA-aligned.
+    die("fatal: error writing header: $fn\n") if (syswrite(F, $_, 0x22) or 0) != 0x22;
+    ' "$ofn" || exit "$?"
+# chmod +x -- "$ofn"  # Not needed, owcc makes it executable on Linux.
