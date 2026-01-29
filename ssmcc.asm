@@ -18,14 +18,14 @@
 DOSSEG  ; Equivalent to `wlink op d'. It makes a difference.
 
 .errndef __SSMCC__  ; Assemble it using the ssmcc tool.
-ifdef __MINIX__
+IFDEF __MINIX__
   .errdef __ELKS__  ; It's an error if both are defined.
-else
+ELSE
   .errndef __ELKS__  ; It's an error if neither is defined.
   .errdef __ELKS__  ; !! TODO(pts): Implement ELKS libc.
-endif
+ENDIF
 
-DGROUP GROUP CONST, CONST2, _DATA, _BSS, STACK
+DGROUP GROUP CONST, CONST2, _DATA, _BSS, STACK  ; These (plus _TEXT) are the standard segment names used by the OpenWatcom v2 C compiler (wcc). Also they are the DOSSEG segments used by the OpenWatcom v2 linker (WLINK).
 _TEXT  SEGMENT BYTE PUBLIC USE16 'CODE'  ; Make DGROUP happy.
 _TEXT  ENDS
 CONST  SEGMENT WORD PUBLIC USE16 'DATA'  ; Make DGROUP happy.
@@ -49,19 +49,55 @@ BDS    ENDS
 ;_etext:
 ;CEND ENDS
 
+; !!! Does this help?
+IF 0
+U__I4D =
+U__I4M =
+;U__U4D =
+;U__U4M =
+;U_brk =
+;U_brksize =
+U_callx =
+U_chmod =
+;U_close =
+;U_creat =
+;U_exit =
+U_fstat =
+U_isatty =
+;U_lseek =
+;U_memcmp =
+U_memcpy =
+;U_memset =
+;U_open00 =
+;U_read =
+U_strcat =
+;U_strcmp =
+;U_strcpy =
+;U_strlen =
+;U_strncmp =
+;U_strrchr =
+U_umask =
+;U_write =
+ENDIF
+
 ; --- Global variables and constants.
 
 BDS SEGMENT PARA PUBLIC USE16 'BEGDATA'  ; Paragraph alignment is important.
-;nullptr_target: dd 0  ; Make sure that a NULL pointer doesn't point to valid data, but here.
+nullptr_target: dd 0  ; Make sure that a NULL pointer doesn't point to valid data, but here.
 BDS ENDS
 
-DATA SEGMENT WORD PUBLIC USE16 'DATA' 
-ifdef U_brksize
+_DATA SEGMENT WORD PUBLIC USE16 'DATA' 
+IFDEF U_brk
+IFNDEF U_brksize
+U_brksize =
+ENDIF
+ENDIF
+IFDEF U_brksize
 EXTRN __end:BYTE
 PUBLIC _brksize
-_brksize: dw offset __end
-endif
-DATA ENDS
+_brksize: dw offset __end  ; The OpenWatcom v2 linker (WLINK) puts the symbol __end to the end of _BSS.
+ENDIF
+_DATA ENDS
 
 _BSS SEGMENT WORD PUBLIC USE16 'BSS'
 PUBLIC __M
@@ -86,12 +122,12 @@ PUBLIC _cstart_
 EXTRN main_:NEAR
 _cstart_:
 EXTRN __edata:BYTE
-if 1  ; This will generate the 1st few bytes of the program image (DOS MZ .exe offset 0x20, right after the DOS MZ .exe header). We are at the beginning of _TEXT.
+IF 1  ; This will generate the 1st few bytes of the program image (DOS MZ .exe offset 0x20, right after the DOS MZ .exe header). We are at the beginning of _TEXT.
 	dw offset __edata  ; The OpenWatcom v2 linker (WLINK) generates the __edata symbol. These 2 bytes will be replaced with `cld ++ pop cx' during post-linking.
-else
+ELSE
 	cld  ; Will be put back during post-linking.
 	pop cx  ; CX := argc. Will be put back during post-linking.
-endif
+ENDIF
 	;sub bp, bp  ; clear for backtrace of core files
 	mov bx, sp  ; BX := argv.
 	;push ax  ; push environ (don't)
@@ -107,11 +143,11 @@ __argc:  ; Actual symbol value doesn't matter.
 	push ax  ; push exit status
 	push ax  ; Fake return address for _exit.
 	; Fall through to _exit.
-
+;
 ; void exit(int exit_code)
-ifdef U_exit
+IFDEF U_exit
 PUBLIC _exit
-endif
+ENDIF
 _exit:
 ; PUBLIC void exit(exit_code)
 ; int exit_code;
@@ -124,28 +160,28 @@ _exit:
 	pop [__M+4]  ; exit_code.
 	mov byte ptr [__M+2], 1  ; *(char*)&_M.m_type = EXIT;
 	; Fall through to _callx.
-
+;
 ; Send a message and get the response.  The '_M.m_type' field of the
 ; reply contains a value (>=0) or an error code (<0).
-ifdef U_callx
+IFDEF U_callx  ; Typically false.
 PUBLIC _callx
-endif
+ENDIF
 _callx:
 ; PRIVATE int callx()
 ; {
 ;   int k;
-; #ifdef DEBUG_MALLOC  /* Always false. */
+; #IFDEF DEBUG_MALLOC  /* Always false. */
 ;   k = _M.m_type;  /* syscall number. */
 ;   k = (k >= READ && k <= CREAT) ;; k == IOCTL;  /* MM (== 0) or FS (== 1). */
-; #else
+; #ELSE
 ;   k = (_M.m_type & 17) != 1;  /* _M.m_type is syscall number. */  /* MM (== 0) or FS (== 1). */  /* This works for EXIT (MM), READ, WRITE, OPEN, CLOSE, CREAT, BRK (MM) and IOCTL. */
-; #endif
+; #ENDIF
 ;   k = sendrec(k, &_M);
 ;   if (k != 0) return(k);  /* send itself failed */
 ;   if (_M.m_type < 0) {
-; #ifdef ERRNO  /* Always false. */
+; #IFDEF ERRNO  /* Always false. */
 ;     errno = -_M.m_type;
-; #endif
+; #ENDIF
 ;     return(-1);
 ;   }
 ;   return(_M.m_type);
@@ -173,7 +209,7 @@ callxret:
 	ret
 
 ; int read(int fd, char *buffer, unsigned nbytes);
-ifdef U_read
+IFDEF U_read
 PUBLIC _read
 _read:
 	mov byte ptr [__M+2], 3  ; *(char*)&_M.m_type = READ;
@@ -186,16 +222,16 @@ readwrite:
 	mov ax, word ptr [bx+6]  ; Argument nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx  ; wasm is smart enough th generate a `jmp short' if the target is close enough.
-endif
+ENDIF
 
 ; int write(int fd, const char *buffer, unsigned nbytes);
-ifdef U_write
+IFDEF U_write
 PUBLIC _write
 _write:
 	mov byte ptr [__M+2], 4  ; *(char*)&_M.m_type = WRITE;
-ifdef U_read
+IFDEF U_read
 	jmp readwrite
-else
+ELSE
 	mov bx, sp
 	mov ax, word ptr [bx+2]  ; Argument fd.
 	mov word ptr [__M+4], ax  ; _M.m1_i1.
@@ -204,25 +240,39 @@ else
 	mov ax, word ptr [bx+6]  ; Argument nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx
-endif
-endif
+ENDIF
+ENDIF
 
 ; int close(int fd);
-ifdef U_close
+IFDEF U_close
 PUBLIC _close
 _close:
 	mov byte ptr [__M+2], 6  ; *(char*)&_M.m_type = CLOSE;
 	; Argument fd will be copied to _M.m1_i1.
+	; Fall through to callxarg1.
+IFNDEF DO_callxarg1
+DO_callxarg1 =
+ENDIF
+ENDIF
+IFDEF U_mask
+DO_callxarg1 =
+ENDIF
+IFDEF U_fstat
+IFNDEF DO_callxarg1
+DO_callxarg1 =
+ENDIF
+ENDIF
+;
+IFDEF DO_callxarg1
 callxarg1:
 	mov bx, sp
 	mov ax, word ptr [bx+2]  ; Argument 1.
 	mov word ptr [__M+4], ax  ; _M.m1_i1.
-j_callx:
 	jmp _callx
-endif
+ENDIF
 
 ; mode_t umask(mode_t complmode);
-ifdef U_umask
+IFDEF U_umask
 PUBLIC _umask
 _umask:
 ; PUBLIC mode_t umask(complmode) mode_t complmode {
@@ -230,10 +280,10 @@ _umask:
 ; }
 	mov byte ptr [__M+2], 60  ; *(char*)&_M.m_type = UMASK;
 	jmp callxarg1  ; Argument complmode will be copied to _M.m1_i1.
-endif
+ENDIF
 
 ; int fstat(int fd, struct stat *buffer);
-ifdef U_fstat
+IFDEF U_fstat
 PUBLIC _fstat
 _fstat:
 ; PUBLIC int fstat(fd, buffer)
@@ -247,39 +297,41 @@ _fstat:
 	mov ax, [bx+4]  ; Argument buffer.
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
 	jmp callxarg1  ; Argument fd will be copied to _M.m1_i1.
-endif
+ENDIF
 
 ; int open00(const char *name);
-ifdef U_open00
+; Same as open(name, 0). Same as open(name, O_RDONLY).
+IFDEF U_open00
 PUBLIC _open00
 _open00:
 	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
 	xor ax, ax  ; AX (flags) := 0. Will be saved to _M.m3_i2.
 	; _M.m3_i2 := flags.  ; Fall through to callm3ax.
-ifndef DO_callm3ax
+IFNDEF DO_callm3ax
 DO_callm3ax =
-endif
-endif
-ifdef U_creat
-ifndef DO_callm3ax
+ENDIF
+ENDIF
+IFDEF U_creat
+IFNDEF DO_callm3ax
 DO_callm3ax =
-endif
-endif
-ifdef DO_callm3ax
+ENDIF
+ENDIF
+;
+IFDEF DO_callm3ax
 callm3ax:
 	mov word ptr [__M+6], ax  ; _M.m3_i2 = mode;
 	; Fall through to callm3.
-ifndef DO_callm3
+IFNDEF DO_callm3
 DO_callm3 =
-endif
-endif
+ENDIF
+ENDIF
 ;
 ; int callm3(const char *name);
 ;
 ; This form of system call is used for those calls that contain at most
 ; one integer parameter along with a string.  If the string fits in the
 ; message, it is copied there.  If not, a pointer to it is passed.
-ifdef DO_callm3
+IFDEF DO_callm3
 callm3:
 ; PUBLIC int callm3(name) _CONST char *name; {
 ;   register unsigned k;
@@ -311,33 +363,34 @@ callm3:
 	xchg di, ax  ; Restore DI from AX. AX := junk.
 callm3skip:
 	pop si  ; Restore.
-	jmp j_callx
-endif
-
-  
+	jmp _callx
+ENDIF
 
 ; int creat(const char *name, mode_t mode);
-ifdef U_creat
+IFDEF U_creat
 PUBLIC _creat
 _creat:
 	mov byte ptr [__M+2], 8  ; *(char*)&_M.m_type = CREAT;
 	; Fall through to callm3arg2.
-endif
-;
-ifdef U_chmod
-ifndef DO_callm3arg2
+IFNDEF DO_callm3arg2
 DO_callm3arg2 =
-endif
-endif
-ifdef DO_callm3arg2
+ENDIF
+ENDIF
+IFDEF U_chmod
+IFNDEF DO_callm3arg2
+DO_callm3arg2 =
+ENDIF
+ENDIF
+;
+IFDEF DO_callm3arg2
 callm3arg2:
 	mov bx, sp
 	mov ax, [bx+4]  ; Argument mode.
 	jmp callm3ax  ; _M.m3_i2 = mode.
-endif
+ENDIF
 
 ; int chmod(const char *name, mode_t mode);
-ifdef U_chmod
+IFDEF U_chmod
 PUBLIC _chmod
 _chmod:
 ; PUBLIC int chmod(name, mode)
@@ -348,10 +401,10 @@ _chmod:
 ; }
 	mov byte ptr [__M+2], 15  ; *(char*)&_M.m_type = CHMOD;
 	jmp callm3arg2
-endif
+ENDIF
 
 ; int isatty(int fd);
-ifdef U_isatty
+IFDEF U_isatty
 PUBLIC _isatty
 _isatty:
 ; int isatty(fd) int fd; {  /* Minix 1.5--1.7.2. */
@@ -407,10 +460,10 @@ isattydone:  ; return callx() >= 0;
 	and ax, 1
 ;isattyret:
 	ret
-endif
+ENDIF
 
 ; off_t lseek(int fd, off_t offset, int whence);
-ifdef U_lseek
+IFDEF U_lseek
 PUBLIC _lseek
 _lseek:
 ; PUBLIC off_t lseek(fd, offset, whence)
@@ -449,10 +502,10 @@ lseekcopyofs:
 	mov dx, word ptr [__M+12]  ; return((off_t) _M.m2_l1);
 lseekret:
 	ret  ; Return result in DX:AX.
-endif
+ENDIF
 
 ; char *brk(char *addr);
-ifdef U_brk
+IFDEF U_brk
 PUBLIC _brk
 _brk:
 ; PUBLIC char *brk(addr) char *addr; {
@@ -461,7 +514,7 @@ _brk:
 ;   if (callx() == 0) {
 ;     brksize = _M.m2_p1;
 ;     return((char*) 0);
-;   } else {
+;   } ELSE {
 ;     return((char *) -1);
 ;   }
 ; }
@@ -479,17 +532,17 @@ brkerror:
 	mov ax, -1  ; return((char *) -1);
 brkret:
 	ret
-endif
+ENDIF
 
 ; --- OpenWatcom v2 C compiler (wcc) integer operation helpers.
 
 ; Divides signed 32-bit long by signed 32-bit long.
 ; Called by code generated by the OpenWatcom C compiler wcc.
-ifdef U__I4D
+IFDEF U__I4D
 PUBLIC __I4D
-ifndef U__U4D
-U__U4D =  ; Make `ifdef U__U4D' be true below.
-endif
+IFNDEF U__U4D
+U__U4D =  ; Make `IFDEF U__U4D' be true below.
+ENDIF
 __I4D:
 	or dx, dx
 	js loc1
@@ -524,11 +577,11 @@ loc17:
 	neg ax
 	sbb dx, 0
 	ret
-endif
+ENDIF
 
 ; Divides unsigned 32-bit long by unsigned 32-bit long.
 ; Called by code generated by the OpenWatcom C compiler wcc.
-ifdef U__U4D
+IFDEF U__U4D
 PUBLIC __U4D
 __U4D:
 	or cx, cx
@@ -617,27 +670,29 @@ loc14:
 	pop si
 	pop bp
 	ret
-endif
+ENDIF
 
 ; Multiplies unsigned 32-bit long by unsigned 32-bit long.
 ; Called by code generated by the OpenWatcom C compiler wcc.
-ifdef U__U4M
+IFDEF U__U4M
 PUBLIC __U4M
 __U4M:
-ifndef DO_I4M
+	; Falls through to __I4M.
+IFNDEF DO_I4M
 DO_I4M =
-endif
-endif
+ENDIF
+ENDIF
+;
 ; Multiplies signed 32-bit long by signed 32-bit long.
 ; Called by code generated by the OpenWatcom C compiler wcc.
-ifdef U__I4M
+IFDEF U__I4M
 PUBLIC __I4M
 __I4M:
-ifndef DO_I4M
+IFNDEF DO_I4M
 DO_I4M =
-endif
-endif
-ifdef DO_I4M
+ENDIF
+ENDIF
+IFDEF DO_I4M
 	xchg ax, bx
 	push ax
 	xchg ax, dx
@@ -655,7 +710,7 @@ loc16:
 	mul bx
 	add dx, cx
 	ret
-endif
+ENDIF
 
 ; --- C library string functions (str...(3) and mem...(3)).
 
@@ -670,7 +725,7 @@ endif
 ; Per X3J11, memcpy may have undefined results if the objects
 ; overlap; since the performance penalty is insignificant, we
 ; use the safe memmove code for it as well.
-ifdef U_memcpy
+IFDEF U_memcpy
 PUBLIC _memcpy
 _memcpy:
 	mov bx, si  ; Save SI to BX.
@@ -684,14 +739,14 @@ _memcpy:
 	mov di, dx  ; Restore DI. DX := junk.
 	mov si, bx  ; Restore SI. BX := junk.
 	ret
-endif
+ENDIF
 
 ; void *memset(void *s, int c, size_t n);
 ;
 ; Copies the value of c (converted to unsigned char) into the
 ; first n locations of the object pointed to by s.
 ; Returns s.
-ifdef U_memset
+IFDEF U_memset
 PUBLIC _memset
 _memset:
 	mov dx, di  ; Save DI to DX.
@@ -704,14 +759,14 @@ _memset:
 	xchg ax, bx  ; AX := s; BX := junk.
 	mov di, dx  ; Restore DI. DX is now junk.
 	ret
-endif
+ENDIF
 
 ; int strcmp(const char *s1, const char *s2);
 ;
 ; Compares the strings pointed to by s1 and s2.  Returns zero if
 ; strings are identical, a positive number if s1 greater than s2,
 ; and a negative number otherwise.
-ifdef U_strcmp
+IFDEF U_strcmp
 PUBLIC _strcmp
 _strcmp:
 	mov bx, si  ; Save SI to BX.
@@ -734,25 +789,25 @@ strcmpdone:
 	mov di, dx  ; Restore DI. DX := junk.
 	mov si, bx  ; Restore SI. BX := junk.
 	ret
-endif
+ENDIF
 
 ; char *strcpy(char *s1, const char *s2);
 ;
 ; Copy the string pointed to by s2, including the terminating null
 ; character, into the array pointed to by s1.  Returns s1.
-ifdef U_strcpy
+IFDEF U_strcpy
 PUBLIC _strcpy
 _strcpy:
-ifdef U_strcat
+IFDEF U_strcat
 	call strcpysetup
-else
+ELSE
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov di, sp
 	mov si, [di+4]  ; Argument s2.
 	mov di, [di+2]  ; Argument s1.
 	mov cx, di  ; Save a copy of s1, for returning.
-endif
+ENDIF
 strcpynext:
 	lodsb
 	stosb
@@ -762,7 +817,7 @@ strcpynext:
 	mov di, dx  ; Restore DI. DX := junk.
 	mov si, bx  ; Restore SI. BX := junk.
 	ret
-ifdef U_strcat
+IFDEF U_strcat
 strcpysetup:  ; Code shared by _strcpy and _strcat.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
@@ -771,29 +826,50 @@ strcpysetup:  ; Code shared by _strcpy and _strcat.
 	mov di, [di+4]  ; Argument s1.
 	mov cx, di  ; Save a copy of s1, for returning.
 	ret
-endif
-endif
+ENDIF
+ENDIF
 
 ; char *strcat(char *s1, const char *s2)
 ;
 ; Concatenates the string pointed to by s2 onto the end of the
 ; string pointed to by s1.  Returns s1.
-ifdef U_strcat
+IFDEF U_strcat
 PUBLIC _strcat
 _strcat:
+IFDEF U_strcpy
 	call strcpysetup
+ELSE
+	mov bx, si  ; Save SI to BX.
+	mov dx, di  ; Save DI to DX.
+	mov di, sp
+	mov si, [di+4]  ; Argument s2.
+	mov di, [di+2]  ; Argument s1.
+	mov cx, di  ; Save a copy of s1, for returning.
+ENDIF
 	mov al, 0
 strcatnext:
 	scasb
 	jne strcatnext
 	dec di  ; Undo the skipping over the last NUL.
+IFDEF U_strcpy
 	jmp strcpynext
-endif
+ELSE
+strcatcopynext:
+	lodsb
+	stosb
+	test al, al
+	jnz strcatcopynext
+	xchg ax, cx  ; AX := s1; CX := junk.
+	mov di, dx  ; Restore DI. DX := junk.
+	mov si, bx  ; Restore SI. BX := junk.
+	ret
+ENDIF
+ENDIF
 
 ; size_t strlen(const char *s);
 ;
 ; Returns the length of the string pointed to by s.
-ifdef U_strlen
+IFDEF U_strlen
 PUBLIC _strlen
 _strlen:
 	mov bx, di  ; Save DI.
@@ -807,12 +883,12 @@ _strlen:
 	xchg ax, cx  ; AX := result; CX := junk.
 	mov di, bx  ; Restore DI. BX is now junk.
 	ret
-endif
+ENDIF
 
 ; char *strrchr(const char *s, int c);
 ;
 ; Locates final occurrence of c (as unsigned char) in string s.
-ifdef U_strrchr
+IFDEF U_strrchr
 PUBLIC _strrchr
 _strrchr:
 	mov bx, si  ; Save SI.
@@ -832,7 +908,7 @@ strrchrdiff:
 	xchg ax, dx  ; AX := pointer to last match; DX := junk.
 	mov si, bx  ; Restore SI. BX is now junk.
 	ret
-endif
+ENDIF
 
 ; int strncmp(const char *s1, const char *s2, size_t n);
 ;
@@ -840,7 +916,7 @@ endif
 ; and s2.  Returns zero if the (possibly null terminated) arrays
 ; are identical, a positive number if s1 is greater than s2, and
 ; a negative number otherwise.
-ifdef U_strncmp
+IFDEF U_strncmp
 PUBLIC _strncmp
 _strncmp:
 	mov bx, si  ; Save SI to BX.
@@ -867,14 +943,14 @@ strncmpret:
 	mov di, dx  ; Restore DI. DX := junk.
 	mov si, bx  ; Restore SI. BX := junk.
 	ret
-endif
+ENDIF
 
 ; int memcmp(const void *s1, const void *s2, size_t n)
 ;
 ; Compares the first n characters of the objects pointed to by
 ; s1 and s2.  Returns zero if all characters are identical, a
 ; positive number if s1 greater than s2, a negative number otherwise.
-ifdef U_memcmp
+IFDEF U_memcmp
 PUBLIC _memcmp
 _memcmp:
 	mov bx, si  ; Save SI to BX.
@@ -893,7 +969,7 @@ memcmpret:
 	mov di, dx  ; Restore DI. DX := junk.
 	mov si, bx  ; Restore SI. BX := junk.
 	ret
-endif
+ENDIF
 
 _TEXT ENDS
 
