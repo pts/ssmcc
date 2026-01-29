@@ -16,16 +16,17 @@ owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,
 udefs="$(perl -e 'my $xc = 1; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
 if test "$xcu" != 0; then cat <ssmcc.err >&2; rm -f ssmcc.err; exit 2; fi  # No undefined symbols found.
 rm -f ssmcc.err
-#wasm -q -s -ms -0 -fr -dSSMCC $udefs -fo=ssmcc.o ssmcc.asm || exit "$?"
 owcc -bdos -s -mcmodel=s -c -Wc,-dSSMCC $udefs -o ssmcc.o ssmcc.asm || exit "$?"
+# !! -U__DOS__ etc.
 owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall ssmcc.o "$@" || exit "$?"
 
-cmp h.exe.good h || exit "$?"
-echo OK:$udefs
-exit
-
-perl -0777 -pwe 'use integer; use strict;  # Replace the DOS MZ header with an Minix i86 a.out header.
-    my($signature, $lastsize, $nblocks, $nreloc, $hdrsize, $minalloc, $maxalloc, $ss, $sp, $checksum, $ip, $cs, $relocpos, $noverlay, $skip14, $skip15, $edata) = unpack("a2v16", substr($_, 0, 0x22));
+perl -we 'use integer; use strict;  # Replace the DOS MZ header with an Minix i86 a.out header.
+    my $fn = $ARGV[0]; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    die("fatal: error opening: $fn\n") if !open(F, "+< $fno");
+    die(2) if (sysread(F, $_, 0x22) or 0) != 0x22;
+    die(3) if !(my $size = sysseek(F, 0, 2));  # Rewind for writing below.
+    die(4) if !sysseek(F, 0, 0);  # Rewind for writing below.
+    my($signature, $lastsize, $nblocks, $nreloc, $hdrsize, $minalloc, $maxalloc, $ss, $sp, $checksum, $ip, $cs, $relocpos, $noverlay, $skip14, $skip15, $edata) = unpack("a2v16", $_);
     die(0) if $signature ne "MZ";
     die(1) if $lastsize > 0x200;
     die(2) if $nblocks == 0;
@@ -36,7 +37,7 @@ perl -0777 -pwe 'use integer; use strict;  # Replace the DOS MZ header with an M
     die(7) if $cs != 0;
     die(8) if $ip != 0;
     my $a_text_data_bss = ($ss << 4 | $sp) - 1;
-    my $a_text_data = ((length($_) + 1) & ~1) - 0x20;
+    my $a_text_data = (($size + 1) & ~1) - 0x20;
     my $a_data = $edata;
     my $a_text = $a_text_data - $a_data;
     my $a_bss = $a_text_data_bss - $a_text_data;
@@ -52,8 +53,9 @@ perl -0777 -pwe 'use integer; use strict;  # Replace the DOS MZ header with an M
     my $a_total = 0x10000;  # Typical to maximize the data segment.
     my $a_syms = 0;  # Exeutable stripped.
     my $instr2 = "\xfc\x59";  # cld ++ push cx.
-    substr($_, 0, 0x22) = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
-    ' <h.exe >h
+    $_ = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
+    die(2) if (syswrite(F, $_, 0x22) or 0) != 0x22;
+    ' h
 chmod +x h
 
 : "$0" OK.
