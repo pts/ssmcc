@@ -1,0 +1,61 @@
+#!/bin/sh --
+# by pts@fazekas.hu at Thu Jan 29 16:08:36 CET 2026
+test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an invalid option in bash(1), and it's harmful (prevents echo) in ash(1).
+unset LANG LANGUAGE  # For deterministic output.
+export LC_ALL=C  # For deterministic output. Typically not needed.
+export TZ=GMT  # For deterministic output. Typically not needed.
+
+# owcc -v -bdos -fno-stack-check -mcmodel=s -fnostdlib -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall -c -o h.o h.c
+#owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall -o h.exe libc0.o h.c
+
+#set x -o h.exe h.c; shift
+set x -o h h.c; shift
+
+owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall "$@"  >ssmcc.err 2>&1
+# Compile a list of undefined symbols. Example: udefs="-Wc,-dU_cstart_ -Wc,-dU_write -Wc,-dU__argc"
+udefs="$(perl -e 'my $xc = 1; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
+if test "$xcu" != 0; then cat <ssmcc.err >&2; rm -f ssmcc.err; exit 2; fi  # No undefined symbols found.
+rm -f ssmcc.err
+#wasm -q -s -ms -0 -fr -dSSMCC $udefs -fo=ssmcc.o ssmcc.asm || exit "$?"
+owcc -bdos -s -mcmodel=s -c -Wc,-dSSMCC $udefs -o ssmcc.o ssmcc.asm || exit "$?"
+owcc -bdos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s -Os -W -Wall ssmcc.o "$@" || exit "$?"
+
+cmp h.exe.good h || exit "$?"
+echo OK:$udefs
+exit
+
+perl -0777 -pwe 'use integer; use strict;  # Replace the DOS MZ header with an Minix i86 a.out header.
+    my($signature, $lastsize, $nblocks, $nreloc, $hdrsize, $minalloc, $maxalloc, $ss, $sp, $checksum, $ip, $cs, $relocpos, $noverlay, $skip14, $skip15, $edata) = unpack("a2v16", substr($_, 0, 0x22));
+    die(0) if $signature ne "MZ";
+    die(1) if $lastsize > 0x200;
+    die(2) if $nblocks == 0;
+    die(3) if $nreloc != 0;
+    die(4) if $hdrsize != 2;
+    die(5) if $ss == 0;
+    die(6) if $checksum != 0;
+    die(7) if $cs != 0;
+    die(8) if $ip != 0;
+    my $a_text_data_bss = ($ss << 4 | $sp) - 1;
+    my $a_text_data = ((length($_) + 1) & ~1) - 0x20;
+    my $a_data = $edata;
+    my $a_text = $a_text_data - $a_data;
+    my $a_bss = $a_text_data_bss - $a_text_data;
+    # !! Check all possible alingment combinations above. !! Also check empty.
+    printf(STDERR "info: a_text=0x%x a_data=0x%x a_bss=0x%x\n", $a_text, $a_data, $a_bss);  # !! Check for negative etc.
+    my $a_magic = "\x01\x03";
+    my $a_flags = 0x20;  # Separate I&D.
+    my $a_cpu = 4;  # A_I8086 == 4; A_I80386 == 0x10.
+    my $a_hdrlen = 0x20;
+    my $a_unused = 0;  # Must be 0 for Minix.
+    my $a_version = 0;  # Must be 0 for Minix.
+    my $a_entry = 0;  # Must be 0 Mfor Minix 1.5.10.
+    my $a_total = 0x10000;  # Typical to maximize the data segment.
+    my $a_syms = 0;  # Exeutable stripped.
+    my $instr2 = "\xfc\x59";  # cld ++ push cx.
+    substr($_, 0, 0x22) = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
+    ' <h.exe >h
+chmod +x h
+
+: "$0" OK.
+
+# !! CONST is not PARA-aligned.
