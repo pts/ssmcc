@@ -2,15 +2,16 @@
 ; ssmcc.asm: very small libc and start code in OpenWatcom v2 assembly (WASM) syntax, targeting Minix i86 and ELKS
 ; by pts@fazekas.hu at Thu Jan 29 06:32:16 CET 2026
 ;
-; The OpenWatcom __cdecl i86 calling convention (same as the Minix 1.5.10 i86 calling convention) is the following:
+; The OpenWatcom __cdecl i86 calling convention (similar to the Minix 1.5.10 i86 calling convention) is the following:
 ;
 ; * Upon each function entry and exit: ES == DS == SS.
 ; * Upon each function entry and exit: DF == 0. (This is only the convention of this libc. The default Minix libc doesn't have it.)
 ; * Please note that the callee can use BX as a scratch register, in addition to the usual AX, CX and DX in cdecl. (In the i386 calling convention, the caller has to restore EBX.)
 ; * The following assumes that all function arguments and return values are 1 byte (char, unsigned char) or 2 bytes (e.g. int, unsigned, pointer) or long (4 bytes) or unsigned long (4 bytes).
 ; * The caller pushes arguments starting with the last (sign-extended or zero-extended if needed first), one word a at a time, does a `call', and then pops the arguments.
-; * The callee can use AX, BX, CX, DX and FLAGS as scratch registers (but must set DF := 0). It must restore all other registers (including SI, DI, BP, DS, ES).
+; * The callee can use AX, BX, CX, DX, ES and FLAGS as scratch registers (but must set DF := 0). It must restore all other registers (including SI, DI, BP, DS). The Minix 1.5.10 i86 calling convention is different: there, the callee must restore ES.
 ; * The callee returns the value in AX (sign-extended or zero-extended if needed), it returns long and unsigned long values in DX:AX.
+; * ES can be anything before each function call. The Minix 1.5.10 i86 calling convention is different: there, the callee can assume that ES == .data.
 ;
 
 ; --- Segment setup.
@@ -49,37 +50,6 @@ BDS    ENDS
 ;_etext:
 ;CEND ENDS
 
-; !!! Does this help?
-IF 0
-U__I4D =
-U__I4M =
-;U__U4D =
-;U__U4M =
-;U_brk =
-;U_brksize =
-U_callx =
-U_chmod =
-;U_close =
-;U_creat =
-;U_exit =
-U_fstat =
-U_isatty =
-;U_lseek =
-;U_memcmp =
-U_memcpy =
-;U_memset =
-;U_open00 =
-;U_read =
-U_strcat =
-;U_strcmp =
-;U_strcpy =
-;U_strlen =
-;U_strncmp =
-;U_strrchr =
-U_umask =
-;U_write =
-ENDIF
-
 ; --- Global variables and constants.
 
 BDS SEGMENT PARA PUBLIC USE16 'BEGDATA'  ; Paragraph alignment is important.
@@ -88,6 +58,11 @@ BDS ENDS
 
 _DATA SEGMENT WORD PUBLIC USE16 'DATA' 
 IFDEF U_brk
+IFNDEF U_brksize
+U_brksize =
+ENDIF
+ENDIF
+IFDEF U_sbrk
 IFNDEF U_brksize
 U_brksize =
 ENDIF
@@ -221,7 +196,7 @@ readwrite:
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
 	mov ax, word ptr [bx+6]  ; Argument nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
-	jmp _callx  ; wasm is smart enough th generate a `jmp short' if the target is close enough.
+	jmp _callx  ; WASM is smart enough to generate a `jmp short' if the target is close enough.
 ENDIF
 
 ; int write(int fd, const char *buffer, unsigned nbytes);
@@ -299,14 +274,43 @@ _fstat:
 	jmp callxarg1  ; Argument fd will be copied to _M.m1_i1.
 ENDIF
 
-; int open00(const char *name);
-; Same as open(name, 0). Same as open(name, O_RDONLY).
+; int open(const char *_path, int _oflag, ...);  /* ... is `mode_t _mode' or `unsigned _mode'. */
+IFDEF U_open
+PUBLIC _open
+_open:
+	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
+	mov bx, sp
+	mov ax, [bx+4]  ; AX := _oflag.
+	mov word ptr [__M+6], ax  ; _M.m1_i2 = _oflag;  ; _M.m3_i2 = _oflag;
+	test ax, 100q  ; O_CREAT.
+IFNDEF DO_callm3
+DO_callm3 =
+ENDIF
+	jz callm3  ; return(callm3(FS, OPEN, _oflag, _path));  /* Ignores _mode. */
+	; Now do return callm1(FS, OPEN, strlen(_path) + 1, _oflag, mode, (char *)_path, NIL_PTR, NIL_PTR);
+	mov ax, [bx+6]  ; Argument _mode.
+	mov word ptr [__M+8], ax  ; _M.m1_i3 = mode;
+	mov ax, [bx+2]  ; Argument _oflag.
+	mov word ptr [__M+10], ax  ; _M.m1_p1 = (char *) _path;
+	push ax  ; Argument _path.
+IFNDEF U_strlen
+U_strlen =
+ENDIF
+	call _strlen  ; AX := strlen(_path). Ruins BX, CX, DX (and ES etc.).
+	pop cx  ; Clean up argument of _strlen above.
+	inc ax  ; AX := strlen(_path) + 1.
+	mov word ptr [__M+4], ax  ; _M.m1_i1 = strlen(_path) + 1;
+	jmp _callx
+ENDIF
+
+; int open00(const char *_path);
+; Same as open(_path, 0). Same as open(_path, O_RDONLY).
 IFDEF U_open00
 PUBLIC _open00
 _open00:
 	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
-	xor ax, ax  ; AX (flags) := 0. Will be saved to _M.m3_i2.
-	; _M.m3_i2 := flags.  ; Fall through to callm3ax.
+	xor ax, ax  ; AX (_oflag) := 0. We ignore _mode, because it's not needed when _oflag == 0 == O_RDONLY. */
+	; _M.m3_i2 := _oflag.  ; Fall through to callm3ax.
 IFNDEF DO_callm3ax
 DO_callm3ax =
 ENDIF
@@ -319,7 +323,7 @@ ENDIF
 ;
 IFDEF DO_callm3ax
 callm3ax:
-	mov word ptr [__M+6], ax  ; _M.m3_i2 = mode;
+	mov word ptr [__M+6], ax  ; _M.m3_i2 = _oflag;
 	; Fall through to callm3.
 IFNDEF DO_callm3
 DO_callm3 =
@@ -350,8 +354,11 @@ callm3:
 	mov si, [si+4]  ; Argument name.
 	mov word ptr [__M+8], si  ; _M.m3_p1 = (char *) name;
 	push si  ; Argument name.
+ifndef U_strlen
+U_strlen =
+endif
 	call _strlen
-	pop cx  ; Clean up argument of _strlean above.
+	pop cx  ; Clean up argument of _strlen above.
 	inc ax  ; k := strlen(name) + 1.
 	mov word ptr [__M+4], ax  ; _M.m3_i1 = k;
 	cmp ax, 14  ; if (k <= M3_STRING)
@@ -502,6 +509,50 @@ lseekcopyofs:
 	mov dx, word ptr [__M+12]  ; return((off_t) _M.m2_l1);
 lseekret:
 	ret  ; Return result in DX:AX.
+ENDIF
+
+; char *sbrk(int incr);
+IFDEF U_sbrk
+PUBLIC _sbrk
+_sbrk:
+; extern char *brksize;
+; PUBLIC char *sbrk(incr) int incr; {
+;   char *newsize, *oldsize;
+;   oldsize = brksize;
+;   newsize = brksize + incr;
+;   if (incr > 0 && newsize < oldsize || incr < 0 && newsize > oldsize)	return((char *) -1);
+;   if (brk(newsize) == 0) return(oldsize);  /* This changes brksize on success. */
+;   return((char *) -1);
+; }
+	push si  ; Save.
+	mov si, sp
+	mov ax, word ptr [si+4]  ; Argument incr.
+	mov si, word ptr [_brksize]  ; SI (oldsize) := _brksize.
+	mov cx, ax  ; It will keep argument incr for the `test' below.
+	add ax, si  ; AX (newsize) := _brksize + incr.
+	test cx, cx  ; incr > 0.
+	jz sbrkinrange
+	js sbrknegative
+	cmp ax, si  ; newsize < oldsize.
+	jb sbrkerror
+sbrknegative:
+	cmp ax, si  ; newsize > oldsize.
+	ja sbrkerror
+sbrkinrange:
+	push ax  ; newsize.
+IFNDEF U_brk
+U_brk =
+ENDIF
+	call _brk  ; Ruins BX, CX, DX (and ES etc.). It's important that it keeps SI (== oldsize).
+	pop cx  ; Clean up argument of _brk above.
+	xchg ax, si  ; AX := oldsize; SI := result of brk(newsize).
+	test si, si  ; if (brk(newsize) == 0)  /* This changes brksize on success. */
+	jz sbrkret  ; return(oldsize);
+sbrkerror:
+	mov ax, -1
+sbrkret:
+	pop si  ; Restore.
+	ret
 ENDIF
 
 ; char *brk(char *addr);
@@ -749,13 +800,15 @@ ENDIF
 IFDEF U_memset
 PUBLIC _memset
 _memset:
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov dx, di  ; Save DI to DX.
 	mov di, sp
 	mov cx, [di+6]  ; Argument n.
 	mov al, [di+4]  ; Argument c.
 	mov di, [di+2]  ; Argument s.
 	mov bx, di  ; Save a copy of s, for returning.
-	rep stosb
+	rep stosb  ; Uses ES. Must be same as DS.
 	xchg ax, bx  ; AX := s; BX := junk.
 	mov di, dx  ; Restore DI. DX is now junk.
 	ret
@@ -769,6 +822,8 @@ ENDIF
 IFDEF U_strcmp
 PUBLIC _strcmp
 _strcmp:
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov si, sp
@@ -776,7 +831,7 @@ _strcmp:
 	mov si, [si+2]  ; Argument s1.
 strcmpnext:
 	lodsb
-	scasb
+	scasb  ; Uses ES. Must be same as DS.
 	jne strcmpdiff
 	cmp al, 0
 	jne strcmpnext
@@ -801,6 +856,8 @@ _strcpy:
 IFDEF U_strcat
 	call strcpysetup
 ELSE
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov di, sp
@@ -810,7 +867,7 @@ ELSE
 ENDIF
 strcpynext:
 	lodsb
-	stosb
+	stosb  ; Uses ES. Must be same as DS.
 	test al, al
 	jnz strcpynext
 	xchg ax, cx  ; AX := s1; CX := junk.
@@ -819,6 +876,8 @@ strcpynext:
 	ret
 IFDEF U_strcat
 strcpysetup:  ; Code shared by _strcpy and _strcat.
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov di, sp
@@ -839,6 +898,8 @@ _strcat:
 IFDEF U_strcpy
 	call strcpysetup
 ELSE
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov di, sp
@@ -848,7 +909,7 @@ ELSE
 ENDIF
 	mov al, 0
 strcatnext:
-	scasb
+	scasb  ; Uses ES. Must be same as DS.
 	jne strcatnext
 	dec di  ; Undo the skipping over the last NUL.
 IFDEF U_strcpy
@@ -856,7 +917,7 @@ IFDEF U_strcpy
 ELSE
 strcatcopynext:
 	lodsb
-	stosb
+	stosb  ; Uses ES. Must be same as DS.
 	test al, al
 	jnz strcatcopynext
 	xchg ax, cx  ; AX := s1; CX := junk.
@@ -872,12 +933,14 @@ ENDIF
 IFDEF U_strlen
 PUBLIC _strlen
 _strlen:
+	mov bx, ds
+	mov es, bx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, di  ; Save DI.
 	mov di, sp
 	mov di, [di+2]  ; Argument s.
 	mov cx, -1
 	xor al, al  ; Also sets ZF := 1, which is needed below for the emptry string.
-	repne scasb
+	repne scasb  ; Uses ES. Must be same as DS.
 	not cx  ; Silly trick gives length (including the NUL byte).
 	dec cx  ; Forget about the NUL byte.
 	xchg ax, cx  ; AX := result; CX := junk.
@@ -919,6 +982,8 @@ ENDIF
 IFDEF U_strncmp
 PUBLIC _strncmp
 _strncmp:
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov si, sp
@@ -928,7 +993,7 @@ _strncmp:
 	mov si, [si+2]  ; Argument s1.
 strncmpnext:
 	lodsb
-	scasb
+	scasb  ; Uses ES. Must be same as DS.
 	je strncmpsame
 	sbb ax, ax
 	sbb ax, -1  ; With the previous instruction: AX := (CF ? -1 : 1).
@@ -953,6 +1018,8 @@ ENDIF
 IFDEF U_memcmp
 PUBLIC _memcmp
 _memcmp:
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
 	mov bx, si  ; Save SI to BX.
 	mov dx, di  ; Save DI to DX.
 	mov si, sp
@@ -960,7 +1027,7 @@ _memcmp:
 	mov di, [si+4]  ; Argument s2.
 	mov si, [si+2]  ; Argument s1.
 	xor ax, ax  ; Also sets ZF := 1, which is needed below for the emptry string.
-	repe cmpsb  ; Continue while equal.
+	repe cmpsb  ; Continue while equal. Uses ES. Must be same as DS.
 	je memcmpret
 	inc ax
 	jnc memcmpret
