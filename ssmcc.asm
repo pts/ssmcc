@@ -630,9 +630,9 @@ _grow:  ; Calls _brk, _free.
 	push bp
 	mov bp, sp
 	mov si, [__top]
-	add si, 6[bp]
-	add si, 3ffH
-	and si, 0fc00H
+	add si, [bp+6]
+	add si, 3ffh
+	and si, 0fc00h
 	cmp si, [__top]
 	jb grow1
 	push si
@@ -645,8 +645,8 @@ grow1:
 	jmp growret
 grow2:
 	mov bx, [__top]
-	mov -2[bx], si
-	mov -2[si], ax
+	mov [bx-2], si
+	mov [si-2], ax
 	push [__top]
 	call _free
 	pop bx  ; Clean up argument of _brk above.
@@ -667,25 +667,25 @@ _malloc:  ; Calls _sbrk, _grow. Transitively calls _sbrk, _brk, _free.
 	mov bp, sp
 	push ax
 	push ax
-	cmp word ptr 8[bp], 0
+	cmp word ptr [bp+8], 0
 	jne malloc3
-	mov word ptr 8[bp], 2
+	mov word ptr [bp+8], 2
 malloc3:
-	mov word ptr -4[bp], 0
+	mov word ptr [bp-4], 0
 	jmp malloc6
 malloc4:
-	inc word ptr -4[bp]
-	cmp word ptr -4[bp], 2
+	inc word ptr [bp-4]
+	cmp word ptr [bp-4], 2
 	jb malloc6
 malloc5:
 	jmp malloc13
 malloc6:
-	mov ax, 8[bp]
+	mov ax, [bp+8]
 	inc ax
-	and al, 0feH
+	and al, 0feh
 	inc ax
 	inc ax
-	mov -2[bp], ax
+	mov [bp-2], ax
 	cmp ax, 4
 	jb malloc5
 	cmp [__bottom], 0
@@ -697,31 +697,31 @@ malloc6:
 	cmp ax, -1
 	je malloc13
 	inc ax
-	and al, 0feH
+	and al, 0feh
 	mov bx, ax
 	inc bx
 	inc bx
 	mov [__bottom], bx
 	mov [__top], bx
-	mov word ptr -2[bx], 0
+	mov word ptr [bx-2], 0
 malloc7:
 	xor di, di
 	mov bx, [__empty]
 malloc8:
 	test bx, bx
 	je malloc12
-	mov ax, -2[bx]
-	mov si, -2[bp]
+	mov ax, [bx-2]
+	mov si, [bp-2]
 	add si, bx
 	cmp si, ax
 	ja malloc11
 	cmp si, bx
 	jbe malloc11
-	lea dx, 2[si]
+	lea dx, [si+2]
 	cmp dx, ax
 	jae malloc9
-	mov -2[si], ax
-	mov -2[bx], si
+	mov [si-2], ax
+	mov [bx-2], si
 	mov ax, [bx]
 	mov [si], ax
 	mov [bx], si
@@ -740,7 +740,7 @@ malloc11:
 	mov bx, [bx]
 	jmp malloc8
 malloc12:
-	push -2[bp]
+	push [bp-2]
 	call _grow
 	pop bx  ; Clean up argument of _brk above.
 	test ax, ax
@@ -766,7 +766,7 @@ _free:  ; Doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
 	push di
 	push bp
 	mov bp, sp
-	mov bx, 8[bp]
+	mov bx, [bp+8]
 	xor di, di
 	mov si, [__empty]
 free27:
@@ -788,19 +788,19 @@ free29:
 free30:
 	test si, si
 	je free31
-	cmp si, -2[bx]
+	cmp si, [bx-2]
 	jne free31
-	mov ax, -2[si]
-	mov -2[bx], ax
+	mov ax, [si-2]
+	mov [bx-2], ax
 	mov ax, [si]
 	mov [bx], ax
 free31:
 	test di, di
 	je mallocret
-	cmp bx, -2[di]
+	cmp bx, [di-2]
 	jne mallocret
-	mov ax, -2[bx]
-	mov -2[di], ax
+	mov ax, [bx-2]
+	mov [di-2], ax
 	mov bx, [bx]
 	mov [di], bx
 	jmp short mallocret
@@ -814,23 +814,23 @@ _realloc:  ; Calls _free, _malloc, _memcpy.
 	push bp
 	mov bp, sp
 	push ax
-	mov bx, 8[bp]
+	mov bx, [bp+8]
 	mov si, bx
-	mov ax, 0aH[bp]
-	cmp ax, 0fffcH
+	mov ax, [bp+0ah]
+	cmp ax, 0fffch
 	jbe realloc17
 	xor ax, ax
 	jmp mallocretsp
 realloc17:
 	inc ax
-	and al, 0feH
+	and al, 0feh
 	mov dx, ax
 	inc dx
 	inc dx
-	mov ax, -2[bx]
+	mov ax, [bx-2]
 	mov di, ax
 	sub di, bx
-	mov -2[bp], di
+	mov [bp-2], di
 	xor di, di
 	mov bx, [__empty]
 realloc18:
@@ -839,8 +839,8 @@ realloc18:
 	cmp bx, ax
 	ja realloc22
 	jne realloc21
-	mov ax, -2[bx]
-	mov -2[si], ax
+	mov ax, [bx-2]
+	mov [si-2], ax
 	test di, di
 	je realloc19
 	mov ax, [bx]
@@ -850,7 +850,7 @@ realloc19:
 	mov ax, [bx]
 	mov [__empty], ax
 realloc20:
-	mov ax, -2[si]
+	mov ax, [si-2]
 	jmp realloc22
 realloc21:
 	mov di, bx
@@ -863,11 +863,11 @@ realloc22:
 	ja realloc24
 	cmp bx, si
 	jb realloc24
-	lea di, 2[bx]
+	lea di, [bx+2]
 	cmp di, ax
 	jae realloc23
-	mov -2[bx], ax
-	mov -2[si], bx
+	mov [bx-2], ax
+	mov [si-2], bx
 	push bx
 	call _free
 	pop bx  ; Clean up argument of _brk above.
@@ -875,7 +875,7 @@ realloc23:
 	mov ax, si
 	jmp mallocretsp
 realloc24:
-	push 0aH[bp]
+	push [bp+0ah]
 	call _malloc
 	mov di, ax
 	pop bx  ; Clean up argument of _brk above.
@@ -884,7 +884,7 @@ realloc24:
 realloc25:
 	jmp mallocretsp
 realloc26:
-	push -2[bp]
+	push [bp-2]
 	push si
 	push ax
 	call _memcpy
