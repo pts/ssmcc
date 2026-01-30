@@ -524,39 +524,22 @@ _sbrk:
 ;   if (brk(newsize) == 0) return(oldsize);  /* This changes brksize on success. */
 ;   return((char *) -1);
 ; }
-; !!! This is buggy.
 	push si  ; Save.
 	mov bx, sp
-if 0
 	mov bx, word ptr [bx+4]  ; Argument incr.
 	mov si, [_brksize]  ; SI (oldsize) := _brksize.
 	test bx, bx  ; incr.
 	lea bx, [si+bx]  ; BX (newsize) := SI (_brksize, oldsize) + incr (BX). It doesn't change the flags.
-	jz sbrkinrange
+	;jz sbrkinrange  ; The logic is correct even without this.
 	js sbrknegative
 	cmp bx, si  ; BX (newsize) < SI (oldsize).
 	jb sbrkerror
+	jmp sbrkinrange
 sbrknegative:
 	cmp bx, si  ; BX (newsize) > SI (oldsize).
 	ja sbrkerror
 sbrkinrange:
 	push bx  ; newsize.
-else  ; !!! This is good.
- mov si,word ptr _brksize
- mov ax,word ptr 4[bx]
- add ax,si
- cmp word ptr 4[bx],0
- jle L$1
- cmp ax,si
- jb sbrkerror
-L$1:
- cmp word ptr 4[bx],0
- jge L$2
- cmp ax,si
- ja sbrkerror
-L$2:
- push ax
-endif
 IFNDEF U_brk
 U_brk =
 ENDIF
