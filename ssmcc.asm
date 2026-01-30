@@ -23,7 +23,6 @@ IFDEF __MINIX__
   .errdef __ELKS__  ; It's an error if both are defined.
 ELSE
   .errndef __ELKS__  ; It's an error if neither is defined.
-  .errdef __ELKS__  ; !! TODO(pts): Implement ELKS libc.
 ENDIF
 
 DGROUP GROUP CONST, CONST2, _DATA, EDATA, _BSS, STACK  ; These (without _TEXT and EDATA) are the standard segment names used by the OpenWatcom v2 C compiler (wcc). Also they are the DOSSEG segments used by the OpenWatcom v2 linker (WLINK).
@@ -75,7 +74,7 @@ IFDEF U_malloc  ; Transitively calls _sbrk, _brk, _free.
     U_brk =
   ENDIF
   IFNDEF U_malloc
-    U_free =  ; !! TODO(pts): Add a shorter implementation of malloc(...) if free(...) or realloc(...) is never needed.
+    U_free =  ; !! TODO(pts): Add a shorter implementation of malloc(...) if free(...) or realloc(...) is not used.
   ENDIF
 ENDIF
 
@@ -145,12 +144,12 @@ __argc:  ; Actual symbol value doesn't matter.
 	push ax  ; Fake return address for _exit.
 	; Fall through to _exit.
 ;
-; void exit(int exit_code)
+; void exit(int exit_code);
 IFDEF U_exit
 PUBLIC _exit
 ENDIF
 _exit:
-; PUBLIC void exit(exit_code)
+; MINIX PUBLIC void exit(exit_code)
 ; int exit_code;
 ; {
 ;   *(char*)&_M.m_type = EXIT;
@@ -158,12 +157,19 @@ _exit:
 ;   callx();
 ; }
 	pop ax  ; Return address. Won't be used.
+IFDEF __ELKS__
+	pop bx  ; exit_code.
+	mov ax, 1  ; SYS_exit.
+	int 80h  ; ELKS syscall.
+ELSE  ; __ELKS__
 	pop [__M+4]  ; exit_code.
 	mov byte ptr [__M+2], 1  ; *(char*)&_M.m_type = EXIT;
 	; Fall through to _callx.
+ENDIF  ; ELSE __ELKS__
 ;
-; Send a message and get the response.  The '_M.m_type' field of the
+; MINIX. Send a message and get the response.  The '_M.m_type' field of the
 ; reply contains a value (>=0) or an error code (<0).
+IFNDEF __ELKS__
 IFDEF U_callx  ; Typically false.
 PUBLIC _callx
 ENDIF
@@ -208,11 +214,19 @@ callxmmfs:
 	mov ax, -1  ; Return value to indicate syscall error.
 callxret:
 	ret
+ENDIF  ; IFNDEF __ELKS__
 
 ; int read(int fd, char *buffer, unsigned nbytes);
 IFDEF U_read
 PUBLIC _read
 _read:
+IFDEF __ELKS__
+	mov ax, 3  ; SYS_read.
+	; Fall through to sesys3.
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 3  ; *(char*)&_M.m_type = READ;
 readwrite:
 	mov bx, sp
@@ -223,12 +237,69 @@ readwrite:
 	mov ax, word ptr [bx+6]  ; Argument nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx  ; WASM is smart enough to generate a `jmp short' if the target is close enough.
+ENDIF  ; ELSE __ELKS__
 ENDIF
+;
+IFDEF __ELKS__
+IFDEF U_write
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_close
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_umask
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_open
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_open00
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_creat
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_chmod
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF DO_sesys3
+sesys3:  ; simple_elks_syscall3: at most 3 arguments.
+	mov bx, sp
+	mov dx, [bx+6]  ; Argument 3 (nbytes of read(...) and write(...)).
+	mov cx, [bx+4]  ; Argument 2 (buffer of read(...) and write(...)).
+sesys1b:
+	mov bx, [bx+2]  ; Argument 1 (fd of read(...) and write(...)).
+	int 80h  ; ELKS syscall.
+	test ax, ax
+	jns sesys3ret
+	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+sesys3ret:
+	ret
+ENDIF
+ENDIF  ; __ELKS__
 
 ; int write(int fd, const char *buffer, unsigned nbytes);
 IFDEF U_write
 PUBLIC _write
 _write:
+IFDEF __ELKS__
+	mov ax, 4  ; SYS_write.
+	jmp sesys3  ; !! TODO(pts): Move it here if U_read is not defined.
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 4  ; *(char*)&_M.m_type = WRITE;
 IFDEF U_read
 	jmp readwrite
@@ -242,19 +313,26 @@ ELSE
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx
 ENDIF
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
 ; int close(int fd);
 IFDEF U_close
 PUBLIC _close
 _close:
+IFDEF __ELKS__
+	mov ax, 6  ; SYS_close.
+	jmp sesys3
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 6  ; *(char*)&_M.m_type = CLOSE;
 	; Argument fd will be copied to _M.m1_i1.
 	; Fall through to callxarg1.
 IFNDEF DO_callxarg1
 DO_callxarg1 =
 ENDIF
-ENDIF
+ENDIF  ; ELSE __ELKS__
+ENDIF  ; U_close
+IFNDEF __ELKS__
 IFDEF U_umask
 DO_callxarg1 =
 ENDIF
@@ -263,6 +341,7 @@ IFNDEF DO_callxarg1
 DO_callxarg1 =
 ENDIF
 ENDIF
+ENDIF  ; IFNDEF __ELKS__
 ;
 IFDEF DO_callxarg1
 callxarg1:
@@ -276,47 +355,59 @@ ENDIF
 IFDEF U_umask
 PUBLIC _umask
 _umask:
-; PUBLIC mode_t umask(complmode) mode_t complmode {
+; MINIX PUBLIC mode_t umask(complmode) mode_t complmode {
 ;   return((mode_t)callm1(FS, UMASK, (int)complmode, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
 ; }
+IFDEF __ELKS__
+	mov ax, 60  ; SYS_umask.
+	jmp sesys3
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 60  ; *(char*)&_M.m_type = UMASK;
 	jmp callxarg1  ; Argument complmode will be copied to _M.m1_i1.
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
-; int fstat(int fd, struct stat *buffer);
+; int fstat(int _fd, struct stat *_statbuf);
 IFDEF U_fstat
+IFNDEF __ELKS__  ; For ELKS, it is defined below.
 PUBLIC _fstat
 _fstat:
-; PUBLIC int fstat(fd, buffer)
-; int fd;
-; struct stat *buffer;
+; MINIX PUBLIC int fstat(_fd, _statbuf)
+; int _fd;
+; struct stat *_statbuf;
 ; {
-;   return(callm1(FS, FSTAT, fd, 0, 0, (char *)buffer, NIL_PTR, NIL_PTR));
+;   return(callm1(FS, FSTAT, _fd, 0, 0, (char *)_statbuf, NIL_PTR, NIL_PTR));
 ; }
 	mov byte ptr [__M+2], 28  ; *(char*)&_M.m_type = FSTAT;
 	mov bx, sp
 	mov ax, [bx+4]  ; Argument buffer.
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
 	jmp callxarg1  ; Argument fd will be copied to _M.m1_i1.
+ENDIF  ; IFNDEF __ELKS__
 ENDIF
+
 
 ; int open(const char *_path, int _oflag, ...);  /* ... is `mode_t _mode' or `unsigned _mode'. */
 IFDEF U_open
 PUBLIC _open
 _open:
+IFDEF __ELKS__
+	mov ax, 5  ; SYS_open.
+	jmp sesys3
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
 	mov bx, sp
 	mov ax, [bx+4]  ; AX := _oflag.
 	mov word ptr [__M+6], ax  ; _M.m1_i2 = _oflag;  ; _M.m3_i2 = _oflag;
-	test ax, 100q  ; O_CREAT.
+	test ax, 0100o  ; O_CREAT == 0100.
 IFNDEF DO_callm3
 DO_callm3 =
 ENDIF
 	jz callm3  ; return(callm3(FS, OPEN, _oflag, _path));  /* Ignores _mode. */
 	; Now do return callm1(FS, OPEN, strlen(_path) + 1, _oflag, mode, (char *)_path, NIL_PTR, NIL_PTR);
-	mov ax, [bx+6]  ; Argument _mode.
+	mov ax, [bx+6]  ; AX := _mode.
 	mov word ptr [__M+8], ax  ; _M.m1_i3 = mode;
-	mov ax, [bx+2]  ; Argument _oflag.
+	mov ax, [bx+2]  ; AX := _path.
 	mov word ptr [__M+10], ax  ; _M.m1_p1 = (char *) _path;
 	push ax  ; Argument _path.
 IFNDEF U_strlen
@@ -327,6 +418,7 @@ ENDIF
 	inc ax  ; AX := strlen(_path) + 1.
 	mov word ptr [__M+4], ax  ; _M.m1_i1 = strlen(_path) + 1;
 	jmp _callx
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
 ; int open00(const char *_path);
@@ -334,18 +426,27 @@ ENDIF
 IFDEF U_open00
 PUBLIC _open00
 _open00:
+IFDEF __ELKS__
+	mov ax, 5  ; SYS_open.
+	mov bx, sp
+	xor cx, cx  ; CX (_oflag) := 0. No need to set DX (_mode) when _oflag == 0 == O_RDONLY.
+	jmp sesys1b
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
 	xor ax, ax  ; AX (_oflag) := 0. We ignore _mode, because it's not needed when _oflag == 0 == O_RDONLY. */
 	; _M.m3_i2 := _oflag.  ; Fall through to callm3ax.
 IFNDEF DO_callm3ax
 DO_callm3ax =
 ENDIF
+ENDIF  ; ELSE __ELKS__
 ENDIF
+IFNDEF __ELKS__
 IFDEF U_creat
 IFNDEF DO_callm3ax
 DO_callm3ax =
 ENDIF
 ENDIF
+ENDIF  ; IFNDEF __ELKS__
 ;
 IFDEF DO_callm3ax
 callm3ax:
@@ -363,7 +464,7 @@ ENDIF
 ; message, it is copied there.  If not, a pointer to it is passed.
 IFDEF DO_callm3
 callm3:
-; PUBLIC int callm3(name) _CONST char *name; {
+; MINIX PUBLIC int callm3(name) _CONST char *name; {
 ;   register unsigned k;
 ;   register char *rp;
 ;   k = strlen(name) + 1;
@@ -399,60 +500,91 @@ callm3skip:
 	jmp _callx
 ENDIF
 
-; int creat(const char *name, mode_t mode);
+; int creat(const char *_path, mode_t _mode);
 IFDEF U_creat
 PUBLIC _creat
 _creat:
+IFDEF __ELKS__
+	mov ax, 5  ; SYS_open.
+	mov bx, sp
+	;mov dx, 666q
+	mov dx, [bx+4]  ; _mode.
+	mov cx, 01101o  ; ELKS O_CREAT == 0100q, O_TRUNC == 01000o. O_WRONLY == 1.
+	jmp sesys1b
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 8  ; *(char*)&_M.m_type = CREAT;
 	; Fall through to callm3arg2.
 IFNDEF DO_callm3arg2
 DO_callm3arg2 =
 ENDIF
+ENDIF  ; ELSE __ELKS__
 ENDIF
+IFNDEF __ELKS__
 IFDEF U_chmod
 IFNDEF DO_callm3arg2
 DO_callm3arg2 =
 ENDIF
 ENDIF
+ENDIF  ; IFNDEF __ELKS__
 ;
 IFDEF DO_callm3arg2
-callm3arg2:
+callm3arg2:  ; MINIX.
 	mov bx, sp
 	mov ax, [bx+4]  ; Argument mode.
 	jmp callm3ax  ; _M.m3_i2 = mode.
 ENDIF
 
-; int chmod(const char *name, mode_t mode);
+; int chmod(const char *_path, mode_t _mode);
 IFDEF U_chmod
 PUBLIC _chmod
 _chmod:
-; PUBLIC int chmod(name, mode)
-; _CONST char *name;
-; mode_t mode;
+; PUBLIC int chmod(_path, _mode)
+; _CONST char *_path;
+; mode_t _mode;
 ; {
-;   return(callm3(FS, CHMOD, mode, name));
+;   return(callm3(FS, CHMOD, _mode, _path));
 ; }
+IFDEF __ELKS__
+	mov ax, 15  ; SYS_chmod.
+	jmp sesys3
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 15  ; *(char*)&_M.m_type = CHMOD;
 	jmp callm3arg2
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
 ; int isatty(int fd);
 IFDEF U_isatty
 PUBLIC _isatty
 _isatty:
-; int isatty(fd) int fd; {  /* Minix 1.5--1.7.2. */
+IFDEF __ELKS__
+	mov bx, sp
+	mov bx, [bx+2]  ; Argument fd.
+	sub sp, 24h  ; ISATTY_TERMIOS_SIZE.  0x24 bytes for ELKS, 0x20 bytes for Minix >=1.7.5.
+	mov dx, sp  ; arg3 arg of SYS.ioctl.
+	mov ax, 54  ; SYS.ioctl. Also sets AH := 0.
+	mov cx, 5401h  ; IOCTL_ELKS.TCGETS.
+	int 80h  ;  ELKS syscall.
+	cmp ax, -38  ; -ERRNO_ELKS.ENOSYS. ELKS 0.2.0 libc does the same.
+	jne isattygot  ; Jumps for ELKS >=1.0.4, maybe it doesn't jump for some earlier versions.
+	; ELKS 0.2.0 libc makes isatty(2) return true for ENOSYS if fd < 3. We do a shortcut, and always return true here. TODO(pts): Revise this when open(2) is implemented.
+	xor ax, ax  ; We will return true (1) if the syscall is not implemented by the kernel (ENOSYS).
+isattygot:
+	add sp, 24h  ; ISATTY_TERMIOS_SIZE
+ELSE  ; __ELKS__
+; MINIX int isatty(fd) int fd; {  /* Minix 1.5--1.7.2. */
 ;   _M.TTY_REQUEST = 0x7408;  /* TIOCGETP == 0x7408 on Minix 1.5.10. */  /* #define TTY_REQUEST m2_i3 */
 ;   _M.TTY_LINE = fd;  /* #define TTY_LINE m2_i1 */
 ;   return(callx(FS, IOCTL) >= 0);  /* FS == 1; IOCTL == 54. */
 ; }
-; int isatty(fd) int fd; {  /* Minix 1.7.4--2.0.4--3.2.0, merged isatty(...), tcgetattr(...) and ioctl(...) */
+; MINIX int isatty(fd) int fd; {  /* Minix 1.7.4--2.0.4--3.2.0, merged isatty(...), tcgetattr(...) and ioctl(...) */
 ;  struct termios dummy;  /* sizeof(struct termios) == 36 == 0x24 on i386, == 32 == 0x20 on i86. */
 ;  m.TTY_REQUEST = (unsigned) (0x80245408L & ~(unsigned) 0);  /* TCGETS == (int) 0x80245408L on Minix 2.0.4 */  /* #define TTY_REQUEST COUNT */  /* #define COUNT m2_i3 */
 ;  m.TTY_LINE = fd;  /* #define TTY_LINE DEVICE */  /* #define DEVICE m2_i1 */
 ;  m.ADDRESS = (char *) &dummy;  /* #define ADDRESS m2_p1 */ 
 ;  return((callx(FS, IOCTL) >= 0);  /* FS == 1; IOCTL == 54. */  /* Actually, Minix does (...) == 0. */
 ; }
-; int isatty(fd) int fd; {  /* Our implementation below, compatible with Minix 1.5--2.0.4--3.2.0. */
+; MINIX int isatty(fd) int fd; {  /* Our implementation below, compatible with Minix 1.5--2.0.4--3.2.0. */
 ;   char dummy[sizeof(int) == 2 ? 32 : 36];  /* struct termios dummy; */  /* For compatibility with Minix 1.7.4--2.0.4--3.2.0. */
 ;   _M.TTY_REQUEST = 0x7408;  /* TIOCGETP; */
 ;   _M.TTY_LINE = fd;
@@ -483,6 +615,8 @@ _isatty:
 	call _callx  ; if (callx() >= 0) goto isattydone;
 	add sp, 32  ; Pop the dummy.
 isattydone:  ; return callx() >= 0;
+ENDIF  ; ELSE __ELKS__
+	; Now convert result AX: negative to 0, everything else to 1.
 	; This would be 1 byte longer.
 	;test ax, ax
 	;mov ax, 1
@@ -499,7 +633,7 @@ ENDIF
 IFDEF U_lseek
 PUBLIC _lseek
 _lseek:
-; PUBLIC off_t lseek(fd, offset, whence)
+; MINIX PUBLIC off_t lseek(fd, offset, whence)
 ; int fd;
 ; off_t offset;
 ; int whence;
@@ -512,6 +646,25 @@ _lseek:
 ;   if ((k = callx()) != 0) return((off_t) k);
 ;   return((off_t) _M.m2_l1);
 ; }
+IFDEF __ELKS__
+	mov ax, 19  ; SYS_lseek.
+	mov bx, sp
+	mov dx, [bx+8]  ; Argument whence.
+	lea cx, [bx+4]  ; Pointer to argument offset.
+	mov bx, [bx+2]  ; Argument 1 (fd of read(...) and write(...)).
+	int 80h  ; ELKS syscall.
+	test ax, ax
+	js lseekerr
+	mov bx, sp
+	mov dx, [bx+6]  ; The ELKS kernel has modifier the argument offset in place. This is the high word.
+	mov ax, [bx+4]  ; The ELKS kernel has modifier the argument offset in place. This is the low  word.
+	jmp lseekret
+lseekerr:
+	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+	cwd  ; DX := AX (== -1).
+lseekret:
+	ret
+ELSE  ; __ELKS__
 	mov bx, si  ; Save SI to BX.
 	mov si, sp
 	lodsw  ; SI += 2; AX := junk.
@@ -535,6 +688,124 @@ lseekcopyofs:
 	mov dx, word ptr [__M+12]  ; return((off_t) _M.m2_l1);
 lseekret:
 	ret  ; Return result in DX:AX.
+ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; int fstat(int _fd, struct stat *_statbuf);
+IFDEF U_fstat
+IFDEF __ELKS__  ; For Minix, it is defined above.
+PUBLIC _fstat
+_fstat:
+	mov ax, 28  ; SYS_fstat.
+	; Fall through to DO_commonstat.
+IFNDEF DO_commonstat
+DO_commonstat =
+ENDIF
+ENDIF  ; IFDEF __ELKS__
+ENDIF
+IFDEF __ELKS__
+IFDEF U_stat
+IFNDEF DO_commonstat
+DO_commonstat =
+ENDIF
+ENDIF
+IFDEF U_lstat
+IFNDEF DO_commonstat
+DO_commonstat =
+ENDIF
+ENDIF
+ENDIF  ; IFDEF __ELKS__
+;
+IFDEF DO_commonstat  ; ELKS.
+commonstat:
+	; The libc caller should pass a 32-bytes struct stat with 32-bit
+	; st_ino here. This call (commonstat) will convert an in-kernel
+	; 16-bit st_ino to 32 bits if needed. ELKS 0.2.0
+	;
+	; ELKS 0.2.0 had a 16-bit st_ino, ELKS 0.2.1--0.3.0--0.4.0-- had it
+	; configurable (with CONFIG_32BIT_INODES), and ELKS 0.8.1 has 32-bit
+	; only. Here is the struct stat layout:
+	;
+	; offset  old       new
+	; 0       st_dev    st_dev
+	; 2       st_ino    low  word of st_ino
+	; 4       st_mode   high word of st_ino
+	; 6       st_nlink  st_mode,  >=1000h
+	; 8       st_uid    st_nlink, >=1
+	;
+	; We detect old struct stat by word_at_6<1000h, which is correct
+	; most of time, except it fails to detect an old ELKS kernel with a
+	; Minix (v2 or v3) filesystem with a file with at least 1000h links,
+	; which is unlikely. Alternatively, we could parse the string
+	; returned by uname(...).
+	mov bx, sp
+	mov cx, [bx+4]  ; Argument _statbuf.
+	mov bx, [bx+2]  ; Argument _fd or _path.
+	int 80h  ; ELKS syscall.
+	test ax, ax
+	js commonstaterr
+	mov bx, sp
+	mov bx, [bx+4]  ; Argument _statbuf.
+	cmp byte ptr [bx+7], 10h
+	jae commonstatret  ;  Jump if new kernel.
+	push si  ; Save.
+	push di  ; Save.
+	lea si, [bx+28]
+	lea di, [bx+30]
+	mov cx, 13
+	std
+	rep movsw  ; Make room for the 32-bit st_ino by copying everthing beyond it.
+	cld
+	pop di  ; Restore.
+	pop si  ; Restore.
+	mov [bx+4], cx  ; Zero-extend 16-bit st_ino (word ptr [bx+2]) to 32 bis. (CX == 0.)
+	jmp commonstatret
+commonstaterr:
+	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+commonstatret:
+	ret
+ENDIF
+
+; int stat(const char *_path, struct stat *_statbuf);
+IFDEF U_stat
+PUBLIC _stat
+_stat:
+; MINIX PUBLIC int stat(_path, _statbuf)
+; _CONST char *_path;
+; struct stat *_statbuf;
+; {
+;   return(callm1(FS, STAT, strlen(_path) + 1, 0, 0, (char *) _path, (char *) _statbuf, NIL_PTR));
+; }
+IFDEF __ELKS__
+	mov ax, 18  ; SYS_stat.
+	jmp commonstat
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 18  ; *(char*)&_M.m_type = STAT;
+	mov bx, sp
+	mov ax, [bx+4]  ; AX := _statbuf.
+	mov word ptr [__M+12], ax  ; _M.m1_p2 = (char *) _statbuf;
+	mov ax, [bx+2]  ; AX := _path.
+	mov word ptr [__M+10], ax  ; _M.m1_p1 = (char *) _path;
+	push ax  ; Argument _path.
+IFNDEF U_strlen
+U_strlen =
+ENDIF
+	call _strlen  ; AX := strlen(_path). Ruins BX, CX, DX (and ES etc.).
+	pop cx  ; Clean up argument of _strlen above.
+	inc ax  ; AX := strlen(_path) + 1.
+	mov word ptr [__M+4], ax  ; _M.m1_i1 = strlen(_path) + 1;
+	jmp _callx
+ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; int lstat(const char *_path, struct stat *_statbuf);
+IFDEF U_stat
+IFDEF __ELKS__  ; There is no lstat system call on Minix 1.15.0.
+PUBLIC _stat
+_stat:
+	mov ax, 57  ; SYS_sltat.
+	jmp commonstat
+ENDIF  ; IFDEF __ELKS__
 ENDIF
 
 ; char *sbrk(int incr);
@@ -542,7 +813,7 @@ IFDEF U_sbrk
 PUBLIC _sbrk
 _sbrk:
 ; extern char *brksize;
-; PUBLIC char *sbrk(incr) int incr; {
+; MINIX PUBLIC char *sbrk(incr) int incr; {
 ;   char *newsize, *oldsize;
 ;   oldsize = brksize;
 ;   newsize = brksize + incr;
@@ -550,6 +821,43 @@ _sbrk:
 ;   if (brk(newsize) == 0) return(oldsize);  /* This changes brksize on success. */
 ;   return((char *) -1);
 ; }
+IFDEF __ELKS__  ; Based on dev86-0.16.21/libc/bcc/heap.c .
+	mov   bx, sp
+	mov   ax, [bx+2]      ; Fetch the requested value
+	test  ax, ax
+	jnz   sbrkchanged
+	mov   ax, [_brksize]  ; Simple one,  read current - can`t fail.
+	jmp   sbrkret
+sbrkchanged:
+	js    go_down
+	add   ax, [_brksize]  ; Going up;
+	jc    sbrknomem
+	sub   bx, 511         ; Safety space 512 bytes
+	cmp   bx, ax          ; Too close ?
+	jb    sbrknomem
+sbrkok:
+	push  ax
+	;call  ___brk         ; Tell the kernel
+	xchg bx, ax
+	mov ax, 17            ; SYS_brk.
+	int 80h               ; ELKS syscall.
+	test  ax, ax
+	pop   ax              ; ASSUME ___brk doesn`t alter stack;
+	jnz   sbrknomem       ; Ugh; kernel didn`t like the idea;
+	xchg  [_brksize], ax  ; Save away new val
+	jmp   sbrkret         ; Return it
+go_down:
+	add   ax, [_brksize]
+	jnc   sbrknomem
+	cmp   ax, offset __end
+	jae   sbrkok
+sbrknomem:
+	;mov   ax, 12          ; This should be ENOMEM not a magic.
+	;mov   [_errno], ax
+	mov   ax, -1
+sbrkret:
+	ret
+ELSE  ; __ELKS__
 	push si  ; Save.
 	mov bx, sp
 	mov bx, word ptr [bx+4]  ; Argument incr.
@@ -579,6 +887,7 @@ sbrkerror:
 sbrkret:
 	pop si  ; Restore.
 	ret
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
 ; char *brk(char *addr);
@@ -595,6 +904,31 @@ _brk:
 ;     return((char *) -1);
 ;   }
 ; }
+IFDEF __ELKS__  ; Based on dev86-0.16.21/libc/bcc/heap.c .
+	mov   bx, sp
+	mov   ax, [bx+2]      ; Fetch the requested value
+	sub   bx, 512         ; Safety space 512 bytes
+	cmp   bx, ax          ; Too close ?
+	jb    brknomem
+	cmp   ax, offset __end
+	jae   brkok
+brknomem:
+	;mov   ax, 12          ; This should be ENOMEM not a magic.
+	;mov   [_errno], ax
+	mov   ax, -1
+	ret
+brkok:
+	push  ax
+	;call  ___brk         ; Tell the kernel
+	xchg bx, ax
+	mov ax, 17            ; SYS_brk.
+	int 80h               ; ELKS syscall.
+	test  ax, ax
+	pop   bx              ; ASSUME ___brk doesn`t alter stack;
+	jnz   brknomem        ; Ugh; kernel didn`t like the idea;
+	mov   [_brksize], bx  ; Save away new val
+	ret
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 17  ; *(char*)&_M.m_type = BRK;
 	mov bx, sp
 	mov bx, [bx+2]  ; Argument addr.
@@ -609,6 +943,7 @@ brkerror:
 	mov ax, -1  ; return((char *) -1);
 brkret:
 	ret
+ENDIF  ; ELSE __ELKS__
 ENDIF
 
 ; --- Memory allocator: malloc(...), free(...), realloc(...).

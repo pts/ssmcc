@@ -46,6 +46,10 @@
 /* mode_t */ int umask _LIBCP((int _cmask));
 int chmod _LIBCP((const char *_path, int _mode));
 int fstat _LIBCP((int _fd, struct stat *_statbuf));
+int stat _LIBCP((const char *_path, struct stat *_buf));
+#ifdef __ELKS__  /* Minix 1.5.10 doesn't have lstat(...). */
+  int lstat _LIBCP((const char *_path, struct stat *_buf));
+#endif
 
 #undef _LIBCP
 #endif  /* _SYS_STAT_H */
