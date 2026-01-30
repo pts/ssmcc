@@ -124,22 +124,20 @@ EXTRN main_:NEAR
 _cstart_:
 EXTRN __edata:BYTE
 IF 1  ; This will generate the 1st few bytes of the program image (DOS MZ .exe offset 0x20, right after the DOS MZ .exe header). We are at the beginning of _TEXT.
-	dw offset __edata  ; The OpenWatcom v2 linker (WLINK) generates the __edata symbol. These 2 bytes will be replaced with `cld ++ pop cx' during post-linking.
+	dw offset __edata  ; The OpenWatcom v2 linker (WLINK) generates the __edata symbol. These 2 bytes will be replaced with `cld ++ pop ax' during post-linking.
 ELSE
 	cld  ; Will be put back during post-linking.
-	pop cx  ; CX := argc. Will be put back during post-linking.
+	pop ax  ; AX := argc. Will be put back during post-linking.
 ENDIF
-	;sub bp, bp  ; clear for backtrace of core files
-	mov bx, sp  ; BX := argv.
+	;sub bp, bp  ; Clear for backtrace of core files.
+	mov dx, sp  ; DX := argv.
 	;push ax  ; push environ (don't)
 PUBLIC __argc  ; The OpenWatcom C compiler generates this as an unused dependency of main(...).
 __argc:  ; Actual symbol value doesn't matter.
-	push bx  ; push argv
-	push cx  ; push argc
+	;push dx  ; argv.
+	;push ax  ; argc.
 	;call _main
-	pop ax  ; argc for __watcall.
-	pop dx  ; argv for __watcall.
-	call main_  ; It's always __watcall. (!! Change it?)
+	call main_  ; The calling convention for main(argc, argv) is always __watcall (even with `owcc -mabi=cdecl) with the OpenWatcom v2 C compiler (wcc).
 	;add sp, 6  ; Not needed, we are exiting soon anyway.
 	push ax  ; push exit status
 	push ax  ; Fake return address for _exit.
@@ -255,7 +253,7 @@ IFNDEF DO_callxarg1
 DO_callxarg1 =
 ENDIF
 ENDIF
-IFDEF U_mask
+IFDEF U_umask
 DO_callxarg1 =
 ENDIF
 IFDEF U_fstat
