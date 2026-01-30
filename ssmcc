@@ -40,8 +40,8 @@ unset WATCOM  # Don't let the OpenWatcom v2 linker (WLINK) find its own config f
 
 ## Figure out the target operating system ("$os").
 case "$1" in
- -belks) cdefs="-D__ELKS__ -D__ELKS -D__elks__ -D__elks -D__unix__"; wasmdefs="-Wc,-d__ELKS__"; shift ;;  # Dev86 has -D__ELKS__ -D__unix__.
- -bminix | -bminixi86) cdefs="-D__MINIX__ -D__MINIX -D__minix__ -D__minix -D__unix__"; wasmdefs="-Wc,-d__MINIX__"; shift ;;  # The ACK ANSI C compiler 1.202 on Minix >=1.7.0 has -D__MINIX. The non-ANSI ACK 3.1 C compiler on Minix 1.5.10 doesn't have anything.
+ -belks) iselks=1; cdefs="-D__ELKS__ -D__ELKS -D__elks__ -D__elks -D__unix__"; wasmdefs="-Wc,-d__ELKS__"; shift ;;  # Dev86 has -D__ELKS__ -D__unix__.
+ -bminix | -bminixi86) iselks=0; cdefs="-D__MINIX__ -D__MINIX -D__minix__ -D__minix -D__unix__"; wasmdefs="-Wc,-d__MINIX__"; shift ;;  # The ACK ANSI C compiler 1.202 on Minix >=1.7.0 has -D__MINIX. The non-ANSI ACK 3.1 C compiler on Minix 1.5.10 doesn't have anything.
  *) echo "fatal: please specify -bminix or -belks first" >&2; exit 3 ;;
 esac
 cdefs="-D__SSMCC__ -D__SIZEOF_INT__=2 -D__SIZEOF_LONG__=4 -D__SIZEOF_POINTER__=2 $cdefs"; wasmdefs="-Wc,-d__SSMCC__ $wasmdefs"
@@ -83,7 +83,7 @@ rm -f ssmcc.o
 
 ## Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
 perl -we 'use integer; use strict;
-    my $fn = $ARGV[0]; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    my($fn, $iselks) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
     die("fatal: error opening: $fn\n") if !open(F, "+< $fno");
     die("fatal: error reeding header: $fn\n") if (sysread(F, $_, 0x22) or 0) != 0x22;
     die("fatal: error getting file size: $fn\n") if !(my $size = sysseek(F, 0, 2));  # Rewind for writing below.
@@ -92,7 +92,7 @@ perl -we 'use integer; use strict;
     die("fatal: missing DOS MZ .exe signature: $fn\n") if $signature ne "MZ";
     die("fatal: bad DOS MZ .exe header: $fn\n") if $lastsize > 0x200 or $nblocks == 0 or $nreloc != 0 or $hdrsize != 2 or $ss == 0 or $cs != 0 or $ip != 0;
     my $a_magic = "\x01\x03";  # Minix and ELKS a.out header signature (magic).
-    my $a_flags = 0x20;  # Executable program with separate I&D. Corresponds to `owcc -mcmodel=s` (small model).
+    my $a_flags = 0x20;  # Executable program with separate I&D. Corresponds to `owcc -mcmodel=s` (small model). Minix (but not ELKS) also supports $_flags == 0x10 (common I&D).
     my $a_cpu = 4;  # A_I8086 == 4; A_I80386 == 0x10.
     my $a_hdrlen = 0x20;
     my $a_unused = 0;  # Must be 0 for Minix.
@@ -101,11 +101,11 @@ perl -we 'use integer; use strict;
     my $a_data = $edata - (-$size & 1);
     my $a_bss = (($ss << 4 | $sp) - 1) - ($size - 0x20);  # -1 is because of `wlink op stack=1`.
     my $a_entry = 0;  # Must be 0 for Minix 1.5.10.
-    my $a_total = 0x10000;  # Typical to maximize the data segment.
+    my $a_total = $iselks ? 0xfff0 : 0x10000;  # Typical to maximize the data segment. ELKS would treat 0x10000 as 0, too little for sbrk(...). 0xffff gives: argument list too long.
     my $a_syms = 0;  # Exeutable stripped.
     my $instr2 = "\xfc\x58";  # Put `cld ++ pop ax` back to the beginning of _cstart_.
     $_ = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
     die("fatal: error writing header: $fn\n") if (syswrite(F, $_, 0x22) or 0) != 0x22;
     # TODO(pts): Remove the trailing NUL bytes at the end of .text, make $a_text smaller.
-    ' "$ofn" || exit "$?"
+    ' "$ofn" "$iselks" || exit "$?"
 # chmod +x -- "$ofn"  # Not needed, owcc makes it executable on Linux.
