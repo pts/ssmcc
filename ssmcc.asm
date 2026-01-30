@@ -524,27 +524,44 @@ _sbrk:
 ;   if (brk(newsize) == 0) return(oldsize);  /* This changes brksize on success. */
 ;   return((char *) -1);
 ; }
+; !!! This is buggy.
 	push si  ; Save.
-	mov si, sp
-	mov ax, word ptr [si+4]  ; Argument incr.
-	mov si, word ptr [_brksize]  ; SI (oldsize) := _brksize.
-	mov cx, ax  ; It will keep argument incr for the `test' below.
-	add ax, si  ; AX (newsize) := _brksize + incr.
-	test cx, cx  ; incr > 0.
+	mov bx, sp
+if 0
+	mov bx, word ptr [bx+4]  ; Argument incr.
+	mov si, [_brksize]  ; SI (oldsize) := _brksize.
+	test bx, bx  ; incr.
+	lea bx, [si+bx]  ; BX (newsize) := SI (_brksize, oldsize) + incr (BX). It doesn't change the flags.
 	jz sbrkinrange
 	js sbrknegative
-	cmp ax, si  ; newsize < oldsize.
+	cmp bx, si  ; BX (newsize) < SI (oldsize).
 	jb sbrkerror
 sbrknegative:
-	cmp ax, si  ; newsize > oldsize.
+	cmp bx, si  ; BX (newsize) > SI (oldsize).
 	ja sbrkerror
 sbrkinrange:
-	push ax  ; newsize.
+	push bx  ; newsize.
+else  ; !!! This is good.
+ mov si,word ptr _brksize
+ mov ax,word ptr 4[bx]
+ add ax,si
+ cmp word ptr 4[bx],0
+ jle L$1
+ cmp ax,si
+ jb sbrkerror
+L$1:
+ cmp word ptr 4[bx],0
+ jge L$2
+ cmp ax,si
+ ja sbrkerror
+L$2:
+ push ax
+endif
 IFNDEF U_brk
 U_brk =
 ENDIF
 	call _brk  ; Ruins BX, CX, DX (and ES etc.). It's important that it keeps SI (== oldsize).
-	pop cx  ; Clean up argument of _brk above.
+	pop bx  ; Clean up argument of _brk above.
 	xchg ax, si  ; AX := oldsize; SI := result of brk(newsize).
 	test si, si  ; if (brk(newsize) == 0)  /* This changes brksize on success. */
 	jz sbrkret  ; return(oldsize);
