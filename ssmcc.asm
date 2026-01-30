@@ -50,6 +50,32 @@ BDS    ENDS
 ;_etext:
 ;CEND ENDS
 
+; --- malloc(), free(), relloc() dependency analysis.
+
+IFDEF U_realloc  ; relloc_ calls _free, _malloc, _memcpy.
+  IFNDEF U_malloc
+    U_malloc =
+  ENDIF
+  IFNDEF U_malloc
+    U_free =
+  ENDIF
+  IFNDEF U_memcpy
+    U_memcpy =
+  ENDIF
+ENDIF
+
+IFDEF U_malloc  ; Transitively calls _sbrk, _brk, _free.
+  IFNDEF U_sbrk
+    U_sbrk =
+  ENDIF
+  IFNDEF U_brk
+    U_brk =
+  ENDIF
+  IFNDEF U_malloc
+    U_free =  ; !! TODO(pts): Add a shorter implementation of malloc(...) if free(...) or realloc(...) is never needed.
+  ENDIF
+ENDIF
+
 ; --- Global variables and constants.
 
 BDS SEGMENT PARA PUBLIC USE16 'BEGDATA'  ; Paragraph alignment is important.
@@ -584,6 +610,290 @@ brkerror:
 brkret:
 	ret
 ENDIF
+
+; --- Memory allocator: malloc(...), free(...), realloc(...).
+;
+; !! Add some C source.
+
+IFDEF U_malloc  ; This is already defined if either malloc(...) or free(...) is needed.
+_TEXT ENDS
+_BSS SEGMENT
+__bottom: dw ?  ; Not exported.
+__top:    dw ?  ; Not exported.
+__empty:  dw ?  ; Not exported.
+_BSS ENDS
+_TEXT SEGMENT
+
+;PUBLIC _grow  ; Not exported.
+_grow:  ; Calls _brk, _free.
+	push si
+	push bp
+	mov bp, sp
+	mov si, [__top]
+	add si, 6[bp]
+	add si, 3ffH
+	and si, 0fc00H
+	cmp si, [__top]
+	jb grow1
+	push si
+	call _brk
+	pop bx  ; Clean up argument of _brk above.
+	test ax, ax
+	je grow2
+grow1:
+	xor ax, ax
+	jmp growret
+grow2:
+	mov bx, [__top]
+	mov -2[bx], si
+	mov -2[si], ax
+	push [__top]
+	call _free
+	pop bx  ; Clean up argument of _brk above.
+	mov [__top], si
+	mov ax, 1
+growret:
+	pop bp
+	pop si
+	ret
+
+IFDEF U_malloc
+PUBLIC _malloc
+ENDIF
+_malloc:  ; Calls _sbrk, _grow. Transitively calls _sbrk, _brk, _free.
+	push si
+	push di
+	push bp
+	mov bp, sp
+	push ax
+	push ax
+	cmp word ptr 8[bp], 0
+	jne malloc3
+	mov word ptr 8[bp], 2
+malloc3:
+	mov word ptr -4[bp], 0
+	jmp malloc6
+malloc4:
+	inc word ptr -4[bp]
+	cmp word ptr -4[bp], 2
+	jb malloc6
+malloc5:
+	jmp malloc13
+malloc6:
+	mov ax, 8[bp]
+	inc ax
+	and al, 0feH
+	inc ax
+	inc ax
+	mov -2[bp], ax
+	cmp ax, 4
+	jb malloc5
+	cmp [__bottom], 0
+	jne malloc7
+	mov ax, 4
+	push ax
+	call _sbrk
+	pop bx  ; Clean up argument of _brk above.
+	cmp ax, -1
+	je malloc13
+	inc ax
+	and al, 0feH
+	mov bx, ax
+	inc bx
+	inc bx
+	mov [__bottom], bx
+	mov [__top], bx
+	mov word ptr -2[bx], 0
+malloc7:
+	xor di, di
+	mov bx, [__empty]
+malloc8:
+	test bx, bx
+	je malloc12
+	mov ax, -2[bx]
+	mov si, -2[bp]
+	add si, bx
+	cmp si, ax
+	ja malloc11
+	cmp si, bx
+	jbe malloc11
+	lea dx, 2[si]
+	cmp dx, ax
+	jae malloc9
+	mov -2[si], ax
+	mov -2[bx], si
+	mov ax, [bx]
+	mov [si], ax
+	mov [bx], si
+malloc9:
+	test di, di
+	je malloc10
+	mov ax, [bx]
+	mov [di], ax
+	jmp malloc14
+malloc10:
+	mov ax, [bx]
+	mov [__empty], ax
+	jmp malloc14
+malloc11:
+	mov di, bx
+	mov bx, [bx]
+	jmp malloc8
+malloc12:
+	push -2[bp]
+	call _grow
+	pop bx  ; Clean up argument of _brk above.
+	test ax, ax
+	je malloc13
+	jmp malloc4
+malloc13:
+	xor bx, bx
+malloc14:
+	mov ax, bx
+mallocretsp:
+	mov sp, bp
+mallocret:
+	pop bp
+	pop di
+	pop si
+	ret
+
+IFDEF U_free
+PUBLIC _free
+ENDIF
+_free:  ; Doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
+	push si
+	push di
+	push bp
+	mov bp, sp
+	mov bx, 8[bp]
+	xor di, di
+	mov si, [__empty]
+free27:
+	test si, si
+	je free28
+	cmp bx, si
+	jb free28
+	mov di, si
+	mov si, [si]
+	jmp free27
+free28:
+	mov [bx], si
+	test di, di
+	je free29
+	mov [di], bx
+	jmp free30
+free29:
+	mov [__empty], bx
+free30:
+	test si, si
+	je free31
+	cmp si, -2[bx]
+	jne free31
+	mov ax, -2[si]
+	mov -2[bx], ax
+	mov ax, [si]
+	mov [bx], ax
+free31:
+	test di, di
+	je mallocret
+	cmp bx, -2[di]
+	jne mallocret
+	mov ax, -2[bx]
+	mov -2[di], ax
+	mov bx, [bx]
+	mov [di], bx
+	jmp short mallocret
+ENDIF  ; U_malloc.
+
+IFDEF U_realloc
+PUBLIC _realloc
+_realloc:  ; Calls _free, _malloc, _memcpy.
+	push si
+	push di
+	push bp
+	mov bp, sp
+	push ax
+	mov bx, 8[bp]
+	mov si, bx
+	mov ax, 0aH[bp]
+	cmp ax, 0fffcH
+	jbe realloc17
+	xor ax, ax
+	jmp mallocretsp
+realloc17:
+	inc ax
+	and al, 0feH
+	mov dx, ax
+	inc dx
+	inc dx
+	mov ax, -2[bx]
+	mov di, ax
+	sub di, bx
+	mov -2[bp], di
+	xor di, di
+	mov bx, [__empty]
+realloc18:
+	test bx, bx
+	je realloc22
+	cmp bx, ax
+	ja realloc22
+	jne realloc21
+	mov ax, -2[bx]
+	mov -2[si], ax
+	test di, di
+	je realloc19
+	mov ax, [bx]
+	mov [di], ax
+	jmp realloc20
+realloc19:
+	mov ax, [bx]
+	mov [__empty], ax
+realloc20:
+	mov ax, -2[si]
+	jmp realloc22
+realloc21:
+	mov di, bx
+	mov bx, [bx]
+	jmp realloc18
+realloc22:
+	mov bx, si
+	add bx, dx
+	cmp bx, ax
+	ja realloc24
+	cmp bx, si
+	jb realloc24
+	lea di, 2[bx]
+	cmp di, ax
+	jae realloc23
+	mov -2[bx], ax
+	mov -2[si], bx
+	push bx
+	call _free
+	pop bx  ; Clean up argument of _brk above.
+realloc23:
+	mov ax, si
+	jmp mallocretsp
+realloc24:
+	push 0aH[bp]
+	call _malloc
+	mov di, ax
+	pop bx  ; Clean up argument of _brk above.
+	test ax, ax
+	jne realloc26
+realloc25:
+	jmp mallocretsp
+realloc26:
+	push -2[bp]
+	push si
+	push ax
+	call _memcpy
+	push si
+	call _free
+	add sp, 8
+	mov ax, di
+	jmp realloc25
+ENDIF  ; U_realloc.
 
 ; --- OpenWatcom v2 C compiler (wcc) integer operation helpers.
 
