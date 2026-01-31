@@ -26,6 +26,7 @@
 
 int creat _LIBCP((const char *_path, int _mode));
 int open _LIBCP((const char *_path, int _oflag, ...));  /* ... is `mode_t _mode' or `unsigned _mode'. */
+#define _LIBC_HAVE_OPEN00 1  /* So that the program source can check it with #ifdef */
 int open00 _LIBCP((const char *_path));  /* Nonstandard equivalent of open(_path, O_RDONLY). */
 
 #undef _LIBCP
