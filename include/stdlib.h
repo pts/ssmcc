@@ -21,6 +21,8 @@ __declspec(noreturn)
 #endif
     void exit _LIBCP((int _status));
 void *malloc _LIBCP((unsigned _nbytes));
+#define _LIBC_HAVE_MALLOC_UNALIGNED 1
+void *malloc_unaligned _LIBCP((unsigned _nbytes));  /* Nonstandard. */
 void *realloc _LIBCP((void *_ptr, unsigned _nbytes));
 void free _LIBCP((void *_ptr));
 

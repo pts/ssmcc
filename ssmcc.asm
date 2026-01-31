@@ -79,7 +79,18 @@ IFDEF U_realloc  ; Regular relloc calls _free, _malloc, _memcpy.
     U_memcpy =
   ENDIF
 ENDIF
+IFDEF U_malloc_unaligned
+  DO_malloc =
+  IFDEF U_free
+    U_malloc =
+  ELSE
+    IFNDEF U_brk
+      U_brk =  ; The counting memory allocator uses brk(...).
+    ENDIF
+  ENDIF
+ENDIF
 IFDEF U_malloc  ; Regular malloc transitively calls _sbrk, _brk, _free.
+  DO_malloc =
   IFDEF U_free
     IFNDEF U_sbrk
       U_sbrk =
@@ -1099,7 +1110,7 @@ ENDIF
 ; static char *_bottom, *_top, *_empty;
 ;
 
-IFDEF U_malloc  ; This is already defined if either malloc(...) or free(...) is needed.
+IFDEF DO_malloc  ; This is already defined if either malloc(...) or free(...) is needed.
 _TEXT ENDS
 _BSS SEGMENT
 IFDEF U_free
@@ -1161,9 +1172,13 @@ ENDIF  ; U_free
 ; void *malloc(unsigned size);
 IFDEF U_malloc
 PUBLIC _malloc
-ENDIF
 _malloc:
+ENDIF
 IFDEF U_free ; This linked-list implementation calls _sbrk, _grow. Transitively calls _sbrk, _brk, _free.
+IFDEF U_malloc_unaligned  ; Same here as regular malloc(...).
+PUBLIC _malloc_unaligned
+_malloc_unaligned:
+ENDIF
 ; void *malloc(size) unsigned size; {
 ;   register char *prev, *p, *next, *new;
 ;   register unsigned len, ntries;
@@ -1300,7 +1315,7 @@ mallocret:
 	pop si
 	ret
 ELSE  ; U_free. This is the (simple) counting implementation of malloc(...). !! TODO(pts): Add malloc_unaligned.
-; void *mymalloc(unsigned size) {  /* Simple unaligned malloc. */
+; void *malloc(unsigned size) {  /* Simple unaligned malloc. */
 ;   char *result, *heapptr_tmp;
 ;   if (!heapptr) maxheap();  /* This is for Minix and ELKS only. On more modern systems, it would greedily allocate too much memory. */
 ;   heapptr_tmp = (size <= 1) ? heapptr : (char *) (((unsigned) heapptr + 1) & ~(unsigned) 1);  /* This never overflows, the kernel doesn't give us this much a_bss. */
@@ -1309,17 +1324,23 @@ ELSE  ; U_free. This is the (simple) counting implementation of malloc(...). !! 
 ;   heapptr += size;
 ;   return (void *) result;
 ; }
+IFNDEF U_malloc
+PUBLIC _malloc_unaligned
+_malloc_unaligned:
+ENDIF
 malloccntupd:
 	mov ax, [heapptr]
 	test ax, ax
 	jz maxheap  ; It will jump back to malloccntupd above.
 	mov bx, sp
 	mov bx, [bx+2]  ; Argument size.
+IFDEF U_malloc
 	cmp bx, 1
-	jbe malloccnt57
+	jbe malloccntafteralign
 	inc ax
 	and al, -2  ; Align DI (heapptr) to a multiple of 2.
-malloccnt57:
+malloccntafteralign:
+ENDIF
 	mov dx, [_brksize]
 	sub dx, ax
 	cmp dx, bx
@@ -1330,7 +1351,20 @@ malloccnt59:
 	add bx, ax
 	mov [heapptr], bx
 	ret
-;
+
+IFDEF U_malloc
+IFDEF U_malloc_unaligned
+PUBLIC _malloc_unaligned
+_malloc_unaligned:
+	mov ax, [heapptr]
+	test ax, ax
+	jz maxheap  ; It will jump back to the malloccntupd in the aligned malloc above. That's suboptimal, but fine.
+	mov bx, sp
+	mov bx, [bx+2]  ; Argument size.
+	jmp short malloccntafteralign
+ENDIF
+ENDIF
+
 maxheap:
 ; void maxheap() {  /* Increases brksize to the maximum, and sets heapptr = brksize. */
 ;   unsigned a, m, b;
