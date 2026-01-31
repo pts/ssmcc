@@ -37,6 +37,8 @@ off_t lseek _LIBCP((int _fd, off_t _offset, int _whence));
 int close _LIBCP((int _fd));
 int isatty _LIBCP((int _fd));
 
+int unlink _LIBCP((const char *_path));  /* Same as remove(...) in <stdio.h>. */
+
 char *brk _LIBCP((char *_addr));
 char *sbrk _LIBCP((int _incr));
 

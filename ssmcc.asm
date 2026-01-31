@@ -281,6 +281,16 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_remove
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_unlink
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 IFDEF DO_sesys3
 sesys3:  ; simple_elks_syscall3: at most 3 arguments.
 	mov bx, sp
@@ -458,12 +468,23 @@ IFNDEF DO_callm3
 DO_callm3 =
 ENDIF
 ENDIF
+IFNDEF __ELKS__
+IFDEF U_remove
+IFNDEF DO_callm3
+DO_callm3 =
+ENDIF
+ENDIF
+IFDEF U_unlink
+IFNDEF DO_callm3
+DO_callm3 =
+ENDIF
+ENDIF
+ENDIF  ; IFNDEF __ELKS__
 ;
 ; int callm3(const char *name);
 ;
-; This form of system call is used for those calls that contain at most
-; one integer parameter along with a string.  If the string fits in the
-; message, it is copied there.  If not, a pointer to it is passed.
+; If the string fits in the message, it is copied there. If not, a pointer
+; to it is passed.
 IFDEF DO_callm3
 callm3:
 ; MINIX PUBLIC int callm3(name) _CONST char *name; {
@@ -552,6 +573,36 @@ IFDEF __ELKS__
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 15  ; *(char*)&_M.m_type = CHMOD;
 	jmp callm3arg2
+ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; char *remove(const char *s, int c);
+; char *unlink(const char *s, int c);
+;
+; Locates final occurrence of c (as unsigned char) in string s.
+IFDEF U_remove
+PUBLIC _remove
+ENDIF
+IFDEF U_unlink
+PUBLIC _unlink
+_unlink:
+IFNDEF U_remove
+U_remove =
+ENDIF
+ENDIF
+IFDEF U_remove
+_remove:
+; MINIX PUBLIC int unlink(name)
+; _CONST char *name;
+; {
+;   return(callm3(FS, UNLINK, 0, name));
+; }
+IFDEF __ELKS__
+	mov ax, 10  ; SYS_unlink.
+	jmp sesys3
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 10  ; *(char*)&_M.m_type = UNLINK;
+	jmp callm3
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
