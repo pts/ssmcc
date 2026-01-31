@@ -1010,23 +1010,26 @@ IFDEF __ELKS__  ; Based on dev86-0.16.21/libc/bcc/heap.c .
 	cmp   bx, ax          ; Too close ?
 	jb    brknomem
 	cmp   ax, offset __end
-	jae   brkok
+	jae   brkok1
 brknomem:
 	;mov   ax, 12          ; This should be ENOMEM not a magic.
 	;mov   [_errno], ax
 	mov   ax, -1
 	ret
-brkok:
+brkok1:
 	push  ax
 	;call  ___brk         ; Tell the kernel
 	xchg bx, ax
 	mov ax, 17            ; SYS_brk.
 	int 80h               ; ELKS syscall.
-	test  ax, ax
 	pop   bx              ; ASSUME ___brk doesn`t alter stack;
-	jnz   brknomem        ; Ugh; kernel didn`t like the idea;
+	test ax, ax
+	jz brkok2
+	xor ax, bx            ; elksemu indicates success like this: AX == BX.
+	jnz brknomem          ; Ugh; kernel didn`t like the idea;
+brkok2:
 	mov   [_brksize], bx  ; Save away new val
-	ret
+	ret                   ; Return AX == 0 to indicate success.
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 17  ; *(char*)&_M.m_type = BRK;
 	mov bx, sp
