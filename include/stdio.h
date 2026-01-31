@@ -16,5 +16,7 @@
   typedef unsigned size_t;
 #endif
 
+/* None of ...printf(...), ...scanf(...), fopen(...) etc. has been implemented so far. */
+
 #undef _LIBCP
 #endif  /* _STDIO_H */
