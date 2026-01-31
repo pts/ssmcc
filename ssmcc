@@ -1,33 +1,44 @@
 #!/bin/sh --
 #
-# ssmcc: simple small model C compiler driver, using OpenWatcom v2
+# ssmcc: simple small model C compiler for i86 Unix-like, using OpenWatcom v2
 # by pts@fazekas.hu at Thu Jan 29 16:08:36 CET 2026
 #
-# Quick try (run the commands on Linux i386 or amd64, without the leading `$`):
+# ssmcc is designed to run on any modern Linux i386 or Linux amd64 system
+# out-of-the-box (it doesn't matter which distro). It's self-contained: the
+# repository has all the programs it needs precompiled and saved to the the
+# tools/ directory.
 #
-#   $ owcc  # Check that OpenWatcom v2 is properly installed.
+# Quick try (run the commands without the leading `$'):
+#
 #   $ echo 'int main() { return write(1, "Hello, World!\n", 14) != 14; }' >hw.c
-#   $ ./ssmcc -bminix -Os -Wno-n131 -o hw hw.c
-#   $ ls -l hw
+#   $ ./ssmcc -belks -Os -Wno-n131 -o hwe hw.c
+#   $ ls -l hwe
+#   -rwxrwxr-x 1 user user 131 Jan 31 16:35 hwe
+#   $ ./ssmcc --elksemu ./hwe
+#   Hello, World!
+#   $ _
 #
-# After installing OpenWatcom v2 (and having the owcc, wcc and wlink tools
-# on your $PATH; no need to set $WATCOM) and adding the directory of this
-# script to your $PATH, compile your C probram like this:
+# Some other examples:
 #
-#   $ ssmcc -bminix -Os -W -Wall -o myprog myprog.c
-#   $ ssmcc -belks  -Os -W -Wall -o myprog myprog.c
+#   $ ssmcc -bminix -Os -W -Wall -o myprog myprog.c  # Targets Minix i86.
+#   $ ssmcc -belks  -Os -W -Wall -o myprog myprog.c  # Targets ELKS.
 #
-# ssmcc accepts the same command-line arguments as owcc (the OpenWatacom v2
+# ssmcc accepts the same command-line arguments as owcc (the OpenWatcom v2
 # C compiler Unix driver), which is similar to GCC and Clang.
 #
 # TODO(pts): Write libc and try with -mabi=watcall. Does it get significantly shorter?
 #
 
+## Shell script setup.
+case "$0" in */*) ssmccdir="${0%/*}" ;; *) ssmccdir=. ;; esac
+if test "$1" != --sh-env; then  # Run the rest of the script with the bundled BusyBox (in tools/), if found.
+  test -f "$ssmccdir/tools/busybox-minicc-1.21.1.upx" && exec "$ssmccdir/tools/busybox-minicc-1.21.1.upx" sh "$0" --sh-env "$@"
+else
+  shift
+fi
 test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an invalid option in bash(1), and it's harmful (prevents echo) in ash(1).
 
-case "$0" in */*) ssmccdir="${0%/*}" ;; *) ssmccdir=. ;; esac
-if test -f "$ssmccdir/ssmcc.asm"; then :; else echo "fatal: missing ssmcc assembly source file: $ssmccdir/ssmcc.asm" >&2; exit 2; fi
-
+## Environment variable setup.
 unset LANG LANGUAGE  # For deterministic output.
 export LC_ALL=C  # For deterministic output. Typically not needed.
 export TZ=GMT  # For deterministic output. Typically not needed.
@@ -38,10 +49,28 @@ export WLINK=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) fin
 export WLINK_LNK=/dev/null/missing  # Don't let the OpenWatcom v2 linker (WLINK) find its own config file. Typical default value is WLINK_LNK=wlink.lnk
 unset WATCOM  # Don't let the OpenWatcom v2 linker (WLINK) find its own config file (so `owcc -bdos' and `wlink form dos' won't work). Typical default location is $WATCOM/$WLINK_LNK
 
+## Tool path setup.
+if test -f "$ssmccdir"/ssmcc.asm; then :; else echo "fatal: missing ssmcc assembly source file: $ssmccdir/ssmcc.asm" >&2; exit 2; fi
+if test -f "$ssmccdir"/tools/owcc-ow2023-03-04.upx; then
+  perl="$ssmccdir"/tools/miniperl-5.004.04.upx
+  owcc="$ssmccdir"/tools/owcc-ow2023-03-04.upx
+  elksemu="$ssmccdir"/tools/elksemu-2023-01-12.upx
+  #wasm="$ssmccdir"/tools/wasm-ow2023-03-04.upx    # Not run directly.
+  #wcc="$ssmccdir"/tools/wcc-ow2023-03-04.upx      # Not run directly.
+  #wlink="$ssmccdir"/tools/wlink-ow2023-03-04.upx  # Not run directly.
+  tpath="$ssmccdir/tools:$PATH"  # Make "$owcc" find wasm, wcc and wlink in tools/ .
+else
+  perl=perl
+  owcc=owcc
+  elksemu=elksemu
+  tpath="$PATH"
+fi
+
 ## Figure out the target operating system ("$os").
 case "$1" in
  -belks) iselks=1; cdefs="-D__ELKS__ -D__ELKS -D__elks__ -D__elks -D__unix__"; wasmdefs="-Wc,-d__ELKS__"; shift ;;  # Dev86 has -D__ELKS__ -D__unix__.
  -bminix | -bminixi86) iselks=0; cdefs="-D__MINIX__ -D__MINIX -D__minix__ -D__minix -D__unix__"; wasmdefs="-Wc,-d__MINIX__"; shift ;;  # The ACK ANSI C compiler 1.202 on Minix >=1.7.0 has -D__MINIX. The non-ANSI ACK 3.1 C compiler on Minix 1.5.10 doesn't have anything.
+ elksemu | --elksemu) shift; exec "$elksemu" "$@"; exit 1 ;;
  *) echo "fatal: please specify -bminix or -belks first" >&2; exit 3 ;;
 esac
 cdefs="-D__SSMCC__ -D__SIZEOF_INT__=2 -D__SIZEOF_LONG__=4 -D__SIZEOF_POINTER__=2 $cdefs"; wasmdefs="-Wc,-d__SSMCC__ $wasmdefs"
@@ -66,9 +95,9 @@ case "$ofn" in "") ofn=a.out; set x -o "$ofn" "$@"; shift ;; esac
 
 ## Compile the program using the OpenWatcom v2 C compiler (wcc) started by the OpenWatcom v2 C compiler Unix driver (owcc).
 # This creates some OMF-format object files (*.o) in the current directory, and doesn't clean them up later. This is normal behavior of owcc (but not gcc or clang), we keep it.
-owcc -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs "$@"  >ssmcc.err 2>&1
+PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs "$@"  >ssmcc.err 2>&1
 # Compile a list of undefined symbols. Example: undefs="-Wc,-dU_cstart_ -Wc,-dU_write -Wc,-dU__argc"
-undefs="$(perl -e 'my $xc = 77; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
+undefs="$("$perl" -e 'my $xc = 77; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
 case "$xcu" in
  77) perl -pe "" <ssmcc.err >&2; rm -f ssmcc.err; exit 5 ;;  # No undefined symbols found, so there must be some other owcc error. `cat' would also work instead of (and would be faster than) `perl -pe ""', but that would be 1 extra external command dependency.
  0) rm -f ssmcc.err ;;  # Found some undefined symbols, saved them to $undefs.
@@ -76,14 +105,14 @@ case "$xcu" in
 esac
 rm -f ssmcc.err
 # Specifying `-mcmodel=s' would be a mistake here: it would cause `wasm -ms', which would make wasm put _DATA before CONST into ssmcc.o, which wlink would keep.
-owcc -bdos $vflag -s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
+PATH="$tpath" "$owcc" -bdos $vflag -s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
 # ssmcc.o must be specified first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
 # TODO(pts): size optimization: Reuse the .o files created in the run of owcc above.
-owcc -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs ssmcc.o "$@" || exit "$?"
+PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs ssmcc.o "$@" || exit "$?"
 rm -f ssmcc.o
 
 ## Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
-perl -we 'use integer; use strict;
+"$perl" -we 'use integer; use strict;
     my($fn, $iselks, $vflag) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
     my $os = $iselks ? "ELKS" : "Minix i86";
     print(STDERR "ssmcc: converting DOS MZ .exe program to $os a.out executable: $fn\n") if $vflag;
