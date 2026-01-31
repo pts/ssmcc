@@ -26,7 +26,7 @@ ELSE
   .errdef __ELKS__  ; !! TODO(pts): Implement ELKS libc.
 ENDIF
 
-DGROUP GROUP CONST, CONST2, _DATA, _BSS, STACK  ; These (plus _TEXT) are the standard segment names used by the OpenWatcom v2 C compiler (wcc). Also they are the DOSSEG segments used by the OpenWatcom v2 linker (WLINK).
+DGROUP GROUP CONST, CONST2, _DATA, EDATA, _BSS, STACK  ; These (without _TEXT and EDATA) are the standard segment names used by the OpenWatcom v2 C compiler (wcc). Also they are the DOSSEG segments used by the OpenWatcom v2 linker (WLINK).
 _TEXT  SEGMENT BYTE PUBLIC USE16 'CODE'  ; Make DGROUP happy.
 _TEXT  ENDS
 CONST  SEGMENT WORD PUBLIC USE16 'DATA'  ; Make DGROUP happy.
@@ -35,6 +35,9 @@ CONST2 SEGMENT WORD PUBLIC USE16 'DATA'  ; Make DGROUP happy.
 CONST2 ENDS
 _DATA  SEGMENT WORD PUBLIC USE16 'DATA'  ; Make DGROUP happy.
 _DATA  ENDS
+EDATA  SEGMENT WORD PUBLIC USE16 'DATA'  ; Make DGROUP happy.
+myedata:
+EDATA  ENDS
 _BSS   SEGMENT WORD PUBLIC USE16 'BSS'  ; Make DGROUP happy.
 _BSS   ENDS
 STACK  SEGMENT BYTE PUBLIC USE16 'STACK'  ; Make DGROUP happy.
@@ -122,9 +125,8 @@ ASSUME DS:DGROUP, ES:DGROUP, SS:DGROUP  ; Without this line, the OpenWatcom v2 a
 PUBLIC _cstart_
 EXTRN main_:NEAR
 _cstart_:
-EXTRN __edata:BYTE
 IF 1  ; This will generate the 1st few bytes of the program image (DOS MZ .exe offset 0x20, right after the DOS MZ .exe header). We are at the beginning of _TEXT.
-	dw offset __edata  ; The OpenWatcom v2 linker (WLINK) generates the __edata symbol. These 2 bytes will be replaced with `cld ++ pop ax' during post-linking.
+	dw offset myedata  ; __edata is alinged to the start of _BSS, which we don't want, so we use myedata, which isn't. These 2 bytes will be replaced with `cld ++ pop ax' during post-linking.
 ELSE
 	cld  ; Will be put back during post-linking.
 	pop ax  ; AX := argc. Will be put back during post-linking.
