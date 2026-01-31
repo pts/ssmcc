@@ -1279,6 +1279,7 @@ _free:  ; Doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
 ; void free(pfix) void *pfix; {
 ;   register char *prev, *next;
 ;   char *p = (char *) pfix;
+;   if (!pfix) return;  /* This is a portability improvement by pts. */
 ;   ASSERT_MALLOC(NextSlot(p) > p);
 ;   for (prev = 0, next = _empty; next != 0; prev = next, next = NextFree(next)) {
 ;     if (p < next) break;
@@ -1306,7 +1307,9 @@ _free:  ; Doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
 	push di
 	push bp
 	mov bp, sp
-	mov bx, [bp+8]
+	mov bx, [bp+8]  ; Argument pfix.
+	test bx, bx
+	jz mallocret  ; if (!pfix) return;
 	xor di, di
 	mov si, [__empty]
 free27:
@@ -1357,6 +1360,7 @@ _realloc:  ; Calls _free, _malloc, _memcpy.
 ;   register char *prev, *p, *next, *new;
 ;   register unsigned len, n;
 ;   char *old = (char *) oldfix;
+;   if (!oldfix) return malloc(m);  /* This is a portability improvement by pts. */
 ;   if (size > ~(unsigned) (2 * PTRSIZE) + 1) return(0);
 ;   len = Align(size, PTRSIZE) + PTRSIZE;
 ;   next = NextSlot(old);
@@ -1398,9 +1402,16 @@ _realloc:  ; Calls _free, _malloc, _memcpy.
 	push bp
 	mov bp, sp
 	push ax
-	mov bx, [bp+8]
+	mov bx, [bp+8]  ; Argument oldfix.
+	mov ax, [bp+0ah]  ; Argument size.
+	test bx, bx
+	jnz reallocnzp
+	push ax
+	call _malloc  ; if (!oldfix) return malloc(m);
+	;pop bx  ; Clean up argument of _malloc above. Not needed, mallocretsp cleans it up.
+	jmp mallocretsp
+reallocnzp:
 	mov si, bx
-	mov ax, [bp+0ah]
 	cmp ax, 0fffch
 	jbe realloc17
 	xor ax, ax
