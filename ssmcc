@@ -54,10 +54,10 @@ fi
 export INCLUDE="$sysinc"  # Respected by OpenWatcom v2 C compiler (wcc) called by owcc.
 
 ## Figure out the output executable program filename ($ofn) from the command-line arguments ("$@"), and whether we are linking.
-next=; dolink=1
+next=; dolink=1; vflag=
 for arg in "$@"; do
   case "$next" in o) ofn="$arg"; next= ;; esac
-  case "$arg" in -o) next=o ;; -o*) ofn="${arg#??}" ;; -[EcS]) dolink=0 ;; esac
+  case "$arg" in -o) next=o ;; -o*) ofn="${arg#??}" ;; -[EcS]) dolink=0 ;; -v) vflag=-v ;; esac
 done
 
 ## If not linking, then just run the compiler driver owcc.
@@ -75,7 +75,7 @@ case "$xcu" in
  *) rm -f ssmcc.err; echo "fatal: error running Perl to find the libc functions used" >&2; exit 6 ;;
 esac
 rm -f ssmcc.err
-owcc -bdos -s -mcmodel=s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
+owcc -bdos $vflag -s -mcmodel=s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
 # ssmcc.o must be specified first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
 # TODO(pts): size optimization: Reuse the .o files created in the run of owcc above.
 owcc -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs ssmcc.o "$@" || exit "$?"
@@ -83,7 +83,9 @@ rm -f ssmcc.o
 
 ## Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
 perl -we 'use integer; use strict;
-    my($fn, $iselks) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    my($fn, $iselks, $vflag) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    my $os = $iselks ? "ELKS" : "Minix i86";
+    print(STDERR "ssmcc: converting DOS MZ .exe program to $os a.out executable: $fn\n") if $vflag;
     die("fatal: error opening: $fn\n") if !open(F, "+< $fno");
     die("fatal: error reeding header: $fn\n") if (sysread(F, $_, 0x22) or 0) != 0x22;
     die("fatal: error getting file size: $fn\n") if !(my $size = sysseek(F, 0, 2));  # Rewind for writing below.
@@ -107,5 +109,5 @@ perl -we 'use integer; use strict;
     $_ = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
     die("fatal: error writing header: $fn\n") if (syswrite(F, $_, 0x22) or 0) != 0x22;
     # TODO(pts): Remove the trailing NUL bytes at the end of .text, make $a_text smaller.
-    ' "$ofn" "$iselks" || exit "$?"
+    ' "$ofn" "$iselks" "$vflag" || exit "$?"
 # chmod +x -- "$ofn"  # Not needed, owcc makes it executable on Linux.
