@@ -75,7 +75,8 @@ case "$xcu" in
  *) rm -f ssmcc.err; echo "fatal: error running Perl to find the libc functions used" >&2; exit 6 ;;
 esac
 rm -f ssmcc.err
-owcc -bdos $vflag -s -mcmodel=s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
+# Specifying `-mcmodel=s' would be a mistake here: it would cause `wasm -ms', which would make wasm put _DATA before CONST into ssmcc.o, which wlink would keep.
+owcc -bdos $vflag -s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
 # ssmcc.o must be specified first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
 # TODO(pts): size optimization: Reuse the .o files created in the run of owcc above.
 owcc -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs ssmcc.o "$@" || exit "$?"
