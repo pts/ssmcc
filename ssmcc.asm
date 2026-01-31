@@ -1748,6 +1748,8 @@ ENDIF
 ; Per X3J11, memcpy may have undefined results if the objects
 ; overlap; since the performance penalty is insignificant, we
 ; use the safe memmove code for it as well.
+;
+; !! TODO(pts): If both memmove and memcpy are used in a program, make memcpy an alias to memmove.
 IFDEF U_memcpy
 PUBLIC _memcpy
 _memcpy:
@@ -1920,11 +1922,55 @@ _strlen:
 	ret
 ENDIF
 
+; char *strchr(const char *s, int c);
+; char *index (const char *s, int c);
+;
+; Locates first occurrence of c (as unsigned char) in string s.
+IFDEF U_strchr
+PUBLIC _strchr
+ENDIF
+IFDEF U_index
+PUBLIC _index
+_index:
+IFNDEF U_strchr
+U_strchr =
+ENDIF
+ENDIF
+IFDEF U_strchr
+_strchr:
+	mov bx, si  ; Save SI.
+	mov si, sp
+	mov ah, [si+4]  ; Argument c.
+	mov si, [si+2]  ; Argument s.
+strchrnext:
+	lodsb
+	cmp al, ah
+	je strchrfound
+	test al, al
+	jnz strchrnext
+	mov si, 1  ; Not found, we will return NULL, but +1 to compensate for the `dec ax' below.
+strchrfound:
+	xchg ax, si  ; AX := SI; SI := junk.
+	dec ax  ; Make DX point to the first occurrence of c, not after it.
+	mov si, bx  ; Restore SI. BX is now junk.
+	ret
+ENDIF
+
 ; char *strrchr(const char *s, int c);
+; char *rindex (const char *s, int c);
 ;
 ; Locates final occurrence of c (as unsigned char) in string s.
 IFDEF U_strrchr
 PUBLIC _strrchr
+ENDIF
+IFDEF U_rindex
+PUBLIC _rindex
+_rindex:
+IFNDEF U_strrchr
+U_strrchr =
+ENDIF
+ENDIF
+IFDEF U_strrchr
 _strrchr:
 	mov bx, si  ; Save SI.
 	mov si, sp
@@ -1936,7 +1982,7 @@ strrchrnext:
 	cmp al, ah
 	jne strrchrdiff
 	mov dx, si
-	dec dx  ; Make DX point to the last occurrence c, not after it.
+	dec dx  ; Make DX point to the last occurrence of c, not after it.
 strrchrdiff:
 	test al, al
 	jnz strrchrnext
