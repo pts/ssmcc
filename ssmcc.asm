@@ -276,6 +276,11 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_rename
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 IFDEF DO_sesys3
 sesys3:  ; simple_elks_syscall3: at most 3 arguments.
 	mov bx, sp
@@ -385,7 +390,6 @@ _fstat:
 	jmp callxarg1  ; Argument fd will be copied to _M.m1_i1.
 ENDIF  ; IFNDEF __ELKS__
 ENDIF
-
 
 ; int open(const char *_path, int _oflag, ...);  /* ... is `mode_t _mode' or `unsigned _mode'. */
 IFDEF U_open
@@ -550,6 +554,44 @@ IFDEF __ELKS__
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 15  ; *(char*)&_M.m_type = CHMOD;
 	jmp callm3arg2
+ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; int rename(const char *_oldpath, const char *_newpath);
+IFDEF U_rename
+PUBLIC _rename
+_rename:
+; MINIX PUBLIC int rename(_oldpath, _newpath)
+; _CONST char *_oldpath;
+; _CONST char *_newpath;
+; {
+;   return(callm1(FS, RENAME, strlen(_oldpath) + 1, strlen(_newpath) + 1, 0, (char *) _oldpath, (char *) _newpath, NIL_PTR));
+; }
+IFDEF __ELKS__
+	mov ax, 38  ; SYS_rename.
+	jmp sesys3  ; TODO(pts): Move it closer to sesys3, to make it a short jump.
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 38  ; *(char*)&_M.m_type = RENAME;
+	mov bx, sp
+	mov ax, [bx+2]  ; Argument _oldpath.
+	mov word ptr [__M+10], ax  ; _M.m1_p1 = (char *) _oldpath;
+	push ax  ; Argument _path.
+IFNDEF U_strlen
+U_strlen =
+ENDIF
+	call _strlen  ; AX := strlen(_oldpath). Ruins BX, CX, DX (and ES etc.).
+	pop cx  ; Clean up argument of _strlen above.
+	inc ax  ; AX := strlen(_oldpath) + 1.
+	mov word ptr [__M+4], ax  ; _M.m1_i1 = strlen(_oldpath) + 1;
+	mov bx, sp  ; `call _strlen' above has ruined it.
+	mov ax, [bx+4]  ; Argument _newpath.
+	mov word ptr [__M+12], ax  ; _M.m1_p2 = (char *) _newpath;
+	push ax  ; Argument _path.
+	call _strlen  ; AX := strlen(_newpath). Ruins BX, CX, DX (and ES etc.).
+	pop cx  ; Clean up argument of _strlen above.
+	inc ax  ; AX := strlen(_newpath) + 1.
+	mov word ptr [__M+6], ax  ;  _M.m1_i2 = strlen(_newpath) + 1;
+	jmp _callx
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
