@@ -68,29 +68,41 @@ BDS    ENDS
 
 ; --- malloc(), free(), relloc() dependency analysis.
 
-IFDEF U_realloc  ; relloc_ calls _free, _malloc, _memcpy.
+IFDEF U_realloc  ; Regular relloc calls _free, _malloc, _memcpy.
   IFNDEF U_malloc
     U_malloc =
   ENDIF
-  IFNDEF U_malloc
+  IFNDEF U_free
     U_free =
   ENDIF
   IFNDEF U_memcpy
     U_memcpy =
   ENDIF
 ENDIF
-
-IFDEF U_malloc  ; Transitively calls _sbrk, _brk, _free.
-  IFNDEF U_sbrk
-    U_sbrk =
-  ENDIF
-  IFNDEF U_brk
-    U_brk =
-  ENDIF
-  IFNDEF U_malloc
-    U_free =  ; !! TODO(pts): Add a shorter implementation of malloc(...) if free(...) or realloc(...) is not used.
+IFDEF U_malloc  ; Regular malloc transitively calls _sbrk, _brk, _free.
+  IFDEF U_free
+    IFNDEF U_sbrk
+      U_sbrk =
+    ENDIF
+    IFNDEF U_brk
+      U_brk =
+    ENDIF
+    IFNDEF U_free
+      U_free =
+    ENDIF
+  ELSE
+    IFNDEF U_brk
+      U_brk =  ; The counting memory allocator uses brk(...).
+    ENDIF
   ENDIF
 ENDIF
+; At this point we have {U_malloc, U_free, U_realloc} or one of its subsets:
+;
+; * {U_malloc, U_free, U_realloc}: linked-list memory allocator, with realloc.
+; * {U_malloc, U_free}: linked-list memory allocator, without realloc.
+; * {U_malloc}: the counting memory allocator (simpler and packs tighter, because nothing needs to be free()d).
+; * {U_free}: will be a no-op.
+; * {}: no memory allocator implementation.
 
 ; --- Global variables and constants.
 
@@ -105,6 +117,11 @@ U_brksize =
 ENDIF
 ENDIF
 IFDEF U_sbrk
+IFNDEF U_brksize
+U_brksize =
+ENDIF
+ENDIF
+IFDEF U_malloc
 IFNDEF U_brksize
 U_brksize =
 ENDIF
@@ -989,18 +1006,20 @@ sbrkret:
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
-; char *brk(char *addr);
+; int brk(char *addr);
+;
+; Sets the break address (end of heap) to the desired value. Returns NULL on success.
 IFDEF U_brk
 PUBLIC _brk
 _brk:
-; PUBLIC char *brk(addr) char *addr; {
+; MINIX PUBLIC int brk(addr) char *addr; {
 ;   *(char*)&_M.m_type = BRK;
 ;   _M.m1_p1 = addr;
 ;   if (callx() == 0) {
 ;     brksize = _M.m2_p1;
-;     return((char*) 0);
+;     return 0;  /* In Minix 1.5.10, the original return type was (char*). */
 ;   } ELSE {
-;     return((char *) -1);
+;     return -1;
 ;   }
 ; }
 IFDEF __ELKS__  ; Based on dev86-0.16.21/libc/bcc/heap.c .
@@ -1083,12 +1102,17 @@ ENDIF
 IFDEF U_malloc  ; This is already defined if either malloc(...) or free(...) is needed.
 _TEXT ENDS
 _BSS SEGMENT
+IFDEF U_free
 __bottom: dw ?  ; Not exported.
 __top:    dw ?  ; Not exported.
 __empty:  dw ?  ; Not exported.
+ELSE
+heapptr: dw ?  ; Not exported.
+ENDIF
 _BSS ENDS
 _TEXT SEGMENT
 
+IFDEF U_free
 ; static int grow(unsigned len);
 ;PUBLIC _grow  ; Not exported.
 _grow:  ; Calls _brk, _free.
@@ -1132,12 +1156,14 @@ growret:
 	pop bp
 	pop si
 	ret
+ENDIF  ; U_free
 
 ; void *malloc(unsigned size);
 IFDEF U_malloc
 PUBLIC _malloc
 ENDIF
-_malloc:  ; Calls _sbrk, _grow. Transitively calls _sbrk, _brk, _free.
+_malloc:
+IFDEF U_free ; This linked-list implementation calls _sbrk, _grow. Transitively calls _sbrk, _brk, _free.
 ; void *malloc(size) unsigned size; {
 ;   register char *prev, *p, *next, *new;
 ;   register unsigned len, ntries;
@@ -1273,12 +1299,125 @@ mallocret:
 	pop di
 	pop si
 	ret
+ELSE  ; U_free. This is the (simple) counting implementation of malloc(...). !! TODO(pts): Add malloc_unaligned.
+; void *mymalloc(unsigned size) {  /* Simple unaligned malloc. */
+;   char *result, *heapptr_tmp;
+;   if (!heapptr) maxheap();  /* This is for Minix and ELKS only. On more modern systems, it would greedily allocate too much memory. */
+;   heapptr_tmp = (size <= 1) ? heapptr : (char *) (((unsigned) heapptr + 1) & ~(unsigned) 1);  /* This never overflows, the kernel doesn't give us this much a_bss. */
+;   if (brksize - heapptr_tmp < size) return (void *) 0;  /* Out of memory. */
+;   result = heapptr_tmp;
+;   heapptr += size;
+;   return (void *) result;
+; }
+malloccntupd:
+	mov ax, [heapptr]
+	test ax, ax
+	jz maxheap  ; It will jump back to malloccntupd above.
+	mov bx, sp
+	mov bx, [bx+2]  ; Argument size.
+	cmp bx, 1
+	jbe malloccnt57
+	inc ax
+	and al, -2  ; Align DI (heapptr) to a multiple of 2.
+malloccnt57:
+	mov dx, [_brksize]
+	sub dx, ax
+	cmp dx, bx
+	jae malloccnt59
+	xor ax, ax  ; return (void *) 0;
+	ret
+malloccnt59:
+	add bx, ax
+	mov [heapptr], bx
+	ret
+;
+maxheap:
+; void maxheap() {  /* Increases brksize to the maximum, and sets heapptr = brksize. */
+;   unsigned a, m, b;
+;   a = (unsigned) (heapptr = brksize);
+;   for (b = 1; b <= a && b != 0; b <<= 1) {}
+;   if (!b) --b;  /* Decrease on power-of-2 overflow to 0. */
+;   while (!brk((char *) b)) {
+;     b <<= 1;
+;     if (!b) --b;  /* Decrease on power-of-2 overflow to 0. */
+;   }
+;   for (;;) {  /* Use binary search to find the end of maximal heap. */
+;     /* Now `a' bytes are available, and `b' bytes are not available, and `a < b'. */
+;     if ((m = a + ((b - a) >> 1)) == a) break;
+;     if (brk((char *) m)) {
+;       b = m;
+;     } else {
+;       a = m;
+;     }
+;   }
+;   brksize = (char *) a;  /* End of maximal heap. */
+; }
+	push si
+	push di
+	mov ax, [_brksize]
+	mov [heapptr], ax
+	mov di, ax
+	mov si, 1
+	cmp ax, si
+	jb maxheap49
+maxheap48:
+	test si, si
+	je maxheap49
+	shl si, 1
+	cmp si, di
+	jbe maxheap48
+maxheap49:
+	test si, si
+	je maxheap52
+maxheap50:
+	push si
+	call _brk
+	pop cx  ; Clean up argument of _brk above.
+	test ax, ax
+	je maxheap53
+maxheap51:
+	mov ax, si
+	sub ax, di
+	mov dx, di
+	shr ax, 1
+	add dx, ax
+	mov cx, dx
+	cmp di, dx
+	je maxheap55
+	push cx  ; Save CX (m).
+	push dx
+	call _brk
+	pop cx  ; Clean up argument of _brk above.
+	pop cx  ; Restore CX (m).
+	test ax, ax
+	je maxheap54
+	mov si, cx
+	jmp maxheap51
+maxheap52:
+	dec si
+	jmp maxheap50
+maxheap53:
+	shl si, 1
+	test si, si
+	jne maxheap50
+	dec si
+	jmp maxheap50
+maxheap54:
+	mov di, cx
+	jmp maxheap51
+maxheap55:
+	mov [_brksize], dx  ; !! TODO(pts): Didn't brk(...) set it already?
+	pop di
+	pop si
+	jmp short malloccntupd
+ENDIF
+ENDIF  ; U_malloc
 
 ; void free(void *pfix);
 IFDEF U_free
 PUBLIC _free
-ENDIF
-_free:  ; Doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
+_free:
+IFDEF U_malloc  ; This linked-list implementation doesn't call any of _grow, _malloc, _realloc, _memcpy, _brk, _sbrk.
 ; void free(pfix) void *pfix; {
 ;   register char *prev, *next;
 ;   char *p = (char *) pfix;
@@ -1350,7 +1489,10 @@ free31:
 	mov bx, [bx]
 	mov [di], bx
 	jmp short mallocret
-ENDIF  ; U_malloc.
+ELSE  ; U_malloc
+	ret  ; If malloc(...) is never used, then free(...) is a no-op.
+ENDIF  ; U_malloc
+ENDIF  ; U_free
 
 ; void *realloc(void *oldfix, unsigned size);
 IFDEF U_realloc
