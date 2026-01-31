@@ -1558,7 +1558,184 @@ loc16:
 	ret
 ENDIF
 
-; --- C library string functions (str...(3) and mem...(3)).
+; --- C library character classification and conversion functions from <ctype.h>.
+;
+; !! TODO(pts): Add the shorter, __watcall variants, and merge the two if both are needed.
+
+; int isalnum(int c);
+IFDEF U_isalnum
+PUBLIC _isalnum
+_isalnum:
+; PUBLIC int isalnum(c) int c; { int i = c & 255; return ((i >= 'A' && i <= 'Z') || (i >= 'a' && i <= 'z') || (i >= '0' && i <= '9')); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, '0'
+	cmp al, '9'-'0'+1
+	jc isalnumfound
+	add al, '0'
+	or al, 20h
+	sub al, 'a'
+	cmp al, 'z'-'a'+1
+isalnumfound:
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isalpha(int c);
+IFDEF U_isalpha
+PUBLIC _isalpha
+_isalpha:
+; PUBLIC int isalpha(c) int c; { int i = c & 255; return ((i >= 'A' && i <= 'Z') || (i >= 'a' && i <= 'z')); }
+	mov bx, sp
+	mov al, [bx+2]
+	or al, 20h
+	sub al, 'a'
+	cmp al, 'z'-'a'+1
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isascii(int c);
+IFDEF U_isascii
+PUBLIC _isascii
+_isascii:
+; PUBLIC int isascii(c) int c; { int i = c & 255; return ((i) >= 0 && (i) <= 127); }
+	mov bx, sp
+	mov al, [bx+2]
+	cmp al, 127+1
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isdigit(int c);
+IFDEF U_isdigit
+PUBLIC _isdigit
+_isdigit:
+; PUBLIC int isdigit(c) int c; { int i = c & 255; return (i >= '0' && i <= '9'); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, '0'
+	cmp al, 10
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int islower(int c);
+IFDEF U_islower
+PUBLIC _islower
+_islower:
+; PUBLIC int islower(c) int c; { int i = c & 255; return (i >= 'a' && i <= 'z'); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, 'a'
+	cmp al, 'z'-'a'+1
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isprint(int c);
+IFDEF U_isprint
+PUBLIC _isprint
+_isprint:
+; PUBLIC int isprint(c) int c; { int i = c & 255; return ((i) >= 32 && (i) <= 126); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, 32  ; ' '.
+	cmp al, 126-32+1  ; '~'-' '+1.
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isspace(int c);
+IFDEF U_isspace
+PUBLIC _isspace
+_isspace:
+; PUBLIC int isspace(c) int c; { int i = c & 255; return ((i >= 9 && i <= 13) || i == ' '); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, 9  ; '\t'
+	cmp al, 5  ; '\r'-'\t'+1
+	jb isspacelow
+	sub al, ' '-9
+	cmp al, 1
+isspacelow:
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isupper(int c);
+IFDEF U_isupper
+PUBLIC _isupper
+_isupper:
+; PUBLIC int isupper(c) int c; { int i = c & 255; return (i >= 'A' && i <= 'Z'); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, 'A'
+	cmp al, 'Z'-'A'+1
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int isxdigit(int c);
+IFDEF U_isxdigit
+PUBLIC _isxdigit
+_isxdigit:
+; PUBLIC int isxdigit(c) int c; { int i = c & 255; return ((i >= 'A' && i <= 'F') || (i >= 'a' && i <= 'f') || (i >= '0' && i <= '9')); }
+	mov bx, sp
+	mov al, [bx+2]
+	sub al, '0'
+	cmp al, 10
+	jb isxdigitdigit
+	or al, 20h
+	sub al, 'a'-'0'
+	cmp al, 6
+isxdigitdigit:
+	sbb ax, ax
+	neg ax
+	ret
+ENDIF
+
+; int tolower(int c);
+IFDEF U_tolower
+PUBLIC _tolower
+_tolower:
+; PUBLIC int tolower(c) int c; { int i = c & 255; return (i >= 'A' && i <= 'Z') ? i + 'a' - 'A' : c; }
+	mov bx, sp
+	mov ax, [bx+2]
+	cmp al, 'A'
+	jb tolowerkeep
+	cmp al, 'Z'
+	ja tolowerkeep
+	add al, 'a'-'A'
+tolowerkeep:
+	ret
+ENDIF
+
+; int toupper(int c);
+IFDEF U_toupper
+PUBLIC _toupper
+_toupper:
+; PUBLIC int toupper(c) int c; { int i = c & 255; return (i >= 'a' && i <= 'z') ? i + 'A' - 'a' : c; }
+	mov bx, sp
+	mov ax, [bx+2]
+	cmp al, 'a'
+	jb toupperkeep
+	cmp al, 'z'
+	ja toupperkeep
+	add al, 'A'-'a'
+toupperkeep:
+	ret
+ENDIF
+
+; --- C library string functions (str...(3) and mem...(3)) from <string.h>.
 
 ; void *memcpy(void *s1, const void *s2, size_t n);
 ;
