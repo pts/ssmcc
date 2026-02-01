@@ -22,6 +22,15 @@
 #  define O_TRUNC     01000  /* truncate flag */
 #  define O_APPEND    02000  /* set append mode */
 #  define O_NONBLOCK  04000  /* no delay */
+#  define O_NDELAY    O_NONBLOCK
+#endif
+#ifdef __ELKS__
+#  define O_CREAT     00100
+#  define O_EXCL      00200
+#  define O_TRUNC     01000
+#  define O_APPEND    02000
+#  define O_NONBLOCK  04000
+#  define O_NDELAY    O_NONBLOCK
 #endif
 
 int creat _LIBCP((const char *_path, int _mode));
