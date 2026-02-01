@@ -801,9 +801,9 @@ ENDIF
 ; int lstat(const char *_path, struct stat *_statbuf);
 IFDEF U_stat
 IFDEF __ELKS__  ; There is no lstat system call on Minix 1.15.0.
-PUBLIC _stat
-_stat:
-	mov ax, 57  ; SYS_sltat.
+PUBLIC _lstat
+_lstat:
+	mov ax, 57  ; SYS_lstat.
 	jmp commonstat
 ENDIF  ; IFDEF __ELKS__
 ENDIF
