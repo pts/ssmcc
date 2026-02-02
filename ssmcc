@@ -129,8 +129,8 @@ rm -f ssmcc.o
     my $a_hdrlen = 0x20;
     my $a_unused = 0;  # Must be 0 for Minix.
     my $a_version = 0;  # Must be 0 for Minix.
-    my $a_text = ((($size + 1) & ~1) - 0x20) - $edata;
-    my $a_data = $edata - (-$size & 1);
+    my $a_text = $size - $edata - 0x20;
+    my $a_data = $edata;
     my $a_bss = (($ss << 4 | $sp) - 1) - ($size - 0x20);  # -1 is because of `wlink op stack=1`.
     my $a_entry = 0;  # Must be 0 for Minix 1.5.10.
     my $a_total = $iselks ? 0xfff0 : 0x10000;  # Typical to maximize the data segment. ELKS would treat 0x10000 as 0, too little for sbrk(...). 0xffff gives: argument list too long.
