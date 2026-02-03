@@ -54,7 +54,7 @@ if test -f "$ssmccdir"/ssmcc.asm; then :; else echo "fatal: missing ssmcc assemb
 if test -f "$ssmccdir"/tools/owcc-ow2023-03-04.upx; then
   perl="$ssmccdir"/tools/miniperl-5.004.04.upx
   owcc="$ssmccdir"/tools/owcc-ow2023-03-04.upx
-  elksemu="$ssmccdir"/tools/elksemu-2023-01-12.upx
+  elksemu="$ssmccdir"/tools/elksemu-2023-01-12b
   #wasm="$ssmccdir"/tools/wasm-ow2023-03-04.upx    # Not run directly.
   #wcc="$ssmccdir"/tools/wcc-ow2023-03-04.upx      # Not run directly.
   #wlink="$ssmccdir"/tools/wlink-ow2023-03-04.upx  # Not run directly.
