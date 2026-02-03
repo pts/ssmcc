@@ -1234,7 +1234,7 @@ IFDEF __ELKS__  ; Based on dev86-0.16.21/libc/bcc/heap.c .
 	test  ax, ax
 	jnz   sbrkchanged
 	mov   ax, [_brksize]  ; Simple one,  read current - can`t fail.
-	jmp   sbrkret
+	ret
 sbrkchanged:
 	js    go_down
 	add   ax, [_brksize]  ; Going up;
@@ -1248,11 +1248,14 @@ sbrkok:
 	xchg bx, ax
 	mov ax, 17            ; SYS_brk.
 	int 80h               ; ELKS syscall.
-	test  ax, ax
-	pop   ax              ; ASSUME ___brk doesn`t alter stack;
-	jnz   sbrknomem       ; Ugh; kernel didn`t like the idea;
-	xchg  [_brksize], ax  ; Save away new val
-	jmp   sbrkret         ; Return it
+	pop   bx              ; ASSUME ___brk doesn`t alter stack;
+	test ax, ax
+	jz sbrkok2
+	xor ax, bx            ; elksemu indicates success like this: AX == BX.
+	jnz sbrknomem         ; Ugh; kernel didn`t like the idea;
+sbrkok2:
+	xchg [_brksize], ax   ; Save away new val. Before this, AX was 0.
+	ret                   ; Return AX == 0 to indicate success.
 go_down:
 	add   ax, [_brksize]
 	jnc   sbrknomem
@@ -1262,7 +1265,6 @@ sbrknomem:
 	;mov   ax, 12          ; This should be ENOMEM not a magic.
 	;mov   [_errno], ax
 	mov   ax, -1
-sbrkret:
 	ret
 ELSE  ; __ELKS__
 	push si  ; Save.
