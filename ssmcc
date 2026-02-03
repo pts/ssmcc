@@ -92,24 +92,26 @@ done
 ## If not linking, then just run the compiler driver owcc.
 case "$dolink" in 0) owcc -bbegin -march=i86 -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char $cdefs "$@"; exit "$?" ;; esac
 case "$ofn" in "") ofn=a.out; set x -o "$ofn" "$@"; shift ;; esac
+errfn="$ofn".ssmcc.err; case "$errfn" in [/_a-zA-Z0-9]*) ;; *) errfn=./"$errfn"; esac
+libcofn="$ofn".ssmcc.o; case "$libcofn" in [/_a-zA-Z0-9]*) ;; *) libcofn=./"$libcofn"; esac
 
 ## Compile the program using the OpenWatcom v2 C compiler (wcc) started by the OpenWatcom v2 C compiler Unix driver (owcc).
 # This creates some OMF-format object files (*.o) in the current directory, and doesn't clean them up later. This is normal behavior of owcc (but not gcc or clang), we keep it.
-PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs "$@"  >ssmcc.err 2>&1
+PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,start=_cstart_ -Wl,op -Wl,d -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs "$@"  >"$errfn" 2>&1
 # Compile a list of undefined symbols. Example: undefs="-Wc,-dU_cstart_ -Wc,-dU_write -Wc,-dU__argc"
-undefs="$("$perl" -e 'my $xc = 77; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <ssmcc.err)"; xcu="$?"
+undefs="$("$perl" -e 'my $xc = 77; my @s; while (<STDIN>) { if (m@^Error! E[^:]+: (\S+) is an undefined reference$@) { push(@s, "-Wc,-dU$1"); $xc = 0 } } print("@s\n"); exit($xc)' <"$errfn")"; xcu="$?"
 case "$xcu" in
- 77) perl -pe "" <ssmcc.err >&2; rm -f ssmcc.err; exit 5 ;;  # No undefined symbols found, so there must be some other owcc error. `cat' would also work instead of (and would be faster than) `perl -pe ""', but that would be 1 extra external command dependency.
- 0) rm -f ssmcc.err ;;  # Found some undefined symbols, saved them to $undefs.
- *) rm -f ssmcc.err; echo "fatal: error running Perl to find the libc functions used" >&2; exit 6 ;;
+ 77) perl -pe "" <"$errfn" >&2; rm -f "$errfn"; exit 5 ;;  # No undefined symbols found, so there must be some other owcc error. `cat' would also work instead of (and would be faster than) `perl -pe ""', but that would be 1 extra external command dependency.
+ 0) rm -f "$errfn" ;;  # Found some undefined symbols, saved them to $undefs.
+ *) rm -f "$errfn"; echo "fatal: error running Perl to find the libc functions used" >&2; exit 6 ;;
 esac
-rm -f ssmcc.err
-# Specifying `-mcmodel=s' would be a mistake here: it would cause `wasm -ms', which would make wasm put _DATA before CONST into ssmcc.o, which wlink would keep.
-PATH="$tpath" "$owcc" -bdos $vflag -s -c $wasmdefs $undefs -o ssmcc.o "$ssmccdir"/ssmcc.asm || exit "$?"
-# ssmcc.o must be specified first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
+rm -f "$errfn"
+# Specifying `-mcmodel=s' would be a mistake here: it would cause `wasm -ms', which would make wasm put _DATA before CONST into "$libcofn", which wlink would keep.
+PATH="$tpath" "$owcc" -bdos $vflag -s -c $wasmdefs $undefs -o "$libcofn" "$ssmccdir"/ssmcc.asm || exit "$?"
+# "$libcofn" must be specified first, because $edata is expected right after the DOS MZ .exe header, i.e. at the beginning of _TEXT.
 # TODO(pts): size optimization: Reuse the .o files created in the run of owcc above.
-PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs ssmcc.o "$@" || exit "$?"
-rm -f ssmcc.o
+PATH="$tpath" "$owcc" -bbegin -march=i86 -Wl,x -Wl,end -Wl,form -Wl,dos -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char -Wl,op -Wl,stack=1 -Wl,disable -Wl,1172 -s $cdefs "$libcofn" "$@" || exit "$?"
+rm -f "$libcofn"
 
 ## Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
 "$perl" -we 'use integer; use strict;
