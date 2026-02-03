@@ -25,6 +25,7 @@ void *malloc _LIBCP((unsigned _nbytes));
 void *malloc_unaligned _LIBCP((unsigned _nbytes));  /* Nonstandard. */
 void *realloc _LIBCP((void *_ptr, unsigned _nbytes));
 void free _LIBCP((void *_ptr));
+char *getenv _LIBCP((const char *name));
 
 #undef _LIBCP
 #endif  /* _STDLIB_H */

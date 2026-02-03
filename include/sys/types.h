@@ -27,6 +27,11 @@
   typedef long time_t;
 #endif
 
+#ifndef _PID_T
+#  define _PID_T _PID_T
+  typedef int pid_t;
+#endif
+
 #ifdef __MINIX__  /* Correct sizes for struct stat in Minix 1.5.10. */
   typedef unsigned short  dev_t;    /* holds (major|minor) device pair */
   typedef unsigned char   gid_t;    /* group id */

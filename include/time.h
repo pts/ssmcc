@@ -21,5 +21,7 @@
   typedef unsigned time_t;
 #endif
 
+time_t time _LIBCP((time_t *_tloc));
+
 #undef _LIBCP
 #endif  /* _TIME_H */

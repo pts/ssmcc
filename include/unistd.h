@@ -22,6 +22,11 @@
   typedef long off_t;  /* offsets within a file */
 #endif
 
+#ifndef _PID_T
+#  define _PID_T _PID_T
+  typedef int pid_t;
+#endif
+
 #define STDIN_FILENO   0  /* file descriptor for stdin */
 #define STDOUT_FILENO  1  /* file descriptor for stdout */
 #define STDERR_FILENO  2  /* file descriptor for stderr */
@@ -41,6 +46,12 @@ int unlink _LIBCP((const char *_path));  /* Same as remove(...) in <stdio.h>. */
 
 int brk _LIBCP((char *_addr));
 char *sbrk _LIBCP((int _incr));
+
+pid_t getpid _LIBCP((void));
+pid_t fork _LIBCP((void));
+
+int execv _LIBCP((char *_path, char *_argv[]));
+int execve _LIBCP((char *_path, char *_argv[], char *_envp[]));
 
 #undef _LIBCP
 #endif  /* _UNISTD_H */

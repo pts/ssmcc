@@ -136,6 +136,11 @@ IFNDEF U_brksize
 U_brksize =
 ENDIF
 ENDIF
+IFDEF U_execve
+IFNDEF U_sbrk
+U_sbrk =
+ENDIF
+ENDIF
 IFDEF U_sbrk
 IFNDEF U_brksize
 U_brksize =
@@ -154,8 +159,49 @@ ENDIF
 _DATA ENDS
 
 _BSS SEGMENT WORD PUBLIC USE16 'BSS'
-PUBLIC __M
+IFDEF U_errno  ; int errno;
+PUBLIC _errno
+_errno: dw ?
+ENDIF
+IFDEF U_getenv
+IFNDEF U_environ
+U_environ =
+ENDIF
+ENDIF
+IFDEF U_execv
+IFNDEF U_environ
+U_environ =
+ENDIF
+ENDIF
+IFDEF U_environ  ; char **environ;
+PUBLIC _environ
+_environ: dw ?
+ENDIF
+IFDEF U_signal
+IFNDEF U___system_signal
+U___system_signal =
+ENDIF
+ENDIF
+IFDEF U___system_signal
+IFNDEF U___sigtable
+U___sigtable =
+ENDIF
+ENDIF
+IFDEF __ELKS__
+IFDEF U___sigtable
+PUBLIC ___sigtable  ; sighandler_t __sigtable[NSIG - 1];
+NSIG = 32
+___sigtable: dw (NSIG - 1) dup (?)
+ENDIF
+ELSE  ; __ELKS__
+PUBLIC __M  ; message _M;
 __M: db 24 dup (?)  ; No COMMON in OpenWatcom v2 C. We could use the `COMMON' directive here.
+IFDEF U___sigtable
+PUBLIC ___sigtable  ; sighandler_t __sigtable[NSIG - 1];
+NSIG = 17
+___sigtable: dw (NSIG - 1) dup (?)
+ENDIF
+ENDIF  ; ELSE __ELKS__
 _BSS ENDS
 
 ; See <minix/com.h> for C definitions
@@ -182,10 +228,19 @@ ELSE
 	pop ax  ; AX := argc. Will be put back during post-linking.
 ENDIF
 	;sub bp, bp  ; Clear for backtrace of core files.
+IFDEF U__argc  ; The OpenWatcom C compiler generates this is main(...) has arguments.
 	mov dx, sp  ; DX := argv.
-	;push ax  ; push environ (don't)
+	mov bx, ax  ; BX := argc.
+	inc bx
+	add bx, bx  ; BX := 2 * (argc + 1).
+	add bx, sp  ; BX := (char **) argv + (argc + 1). BX := envp.
+IFDEF U_environ
+	mov [_environ], bx
+ENDIF
 PUBLIC __argc  ; The OpenWatcom C compiler generates this as an unused dependency of main(...).
 __argc:  ; Actual symbol value doesn't matter.
+ENDIF  ; U___argc
+	;push bx  ; envp.
 	;push dx  ; argv.
 	;push ax  ; argc.
 	;call _main
@@ -259,26 +314,27 @@ callxmmfs:
 	or ax, word ptr [__M+2]  ; Syscall result or -errno.
 	mov byte ptr [__M+3], 0  ; Set high byte of next syscall to 0.
 	jns callxret
-	; Here, if ERRNO is defined, we should set:
-	;neg ax
-	;mov [_errno], ax
+IFDEF U_errno
+	neg ax
+	mov [_errno], ax
+ENDIF
 	mov ax, -1  ; Return value to indicate syscall error.
 callxret:
 	ret
 ENDIF  ; IFNDEF __ELKS__
 
-; int read(int fd, char *buffer, unsigned nbytes);
-IFDEF U_read
-PUBLIC _read
-_read:
+; int write(int fd, const char *buffer, unsigned nbytes);
+IFDEF U_write
+PUBLIC _write
+_write:
 IFDEF __ELKS__
-	mov ax, 3  ; SYS_read.
+	mov al, 4  ; SYS_write.
 	; Fall through to sesys3.
 IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ELSE  ; __ELKS__
-	mov byte ptr [__M+2], 3  ; *(char*)&_M.m_type = READ;
+	mov byte ptr [__M+2], 4  ; *(char*)&_M.m_type = WRITE;
 readwrite:
 	mov bx, sp
 	mov ax, word ptr [bx+2]  ; Argument fd.
@@ -342,31 +398,79 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_getpid
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_wait
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_wait4
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_getpid
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_time
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_signal
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_execve
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+;
 IFDEF DO_sesys3
+IFDEF U___sesys3
+PUBLIC ___sesys3
+___sesys3:
+ENDIF
 sesys3:  ; simple_elks_syscall3: at most 3 arguments.
 	mov bx, sp
+sesys3bxok:
 	mov dx, [bx+6]  ; Argument 3 (nbytes of read(...) and write(...)).
 	mov cx, [bx+4]  ; Argument 2 (buffer of read(...) and write(...)).
 sesys1b:
 	mov bx, [bx+2]  ; Argument 1 (fd of read(...) and write(...)).
+sesys:
+	mov ah, 0
 	int 80h  ; ELKS syscall.
 	test ax, ax
 	jns sesys3ret
+sesyserr:
+IFDEF U_errno
+	neg ax
+	mov [_errno], ax
+ENDIF
 	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
 sesys3ret:
 	ret
 ENDIF
 ENDIF  ; __ELKS__
 
-; int write(int fd, const char *buffer, unsigned nbytes);
-IFDEF U_write
-PUBLIC _write
-_write:
+; int read(int fd, char *buffer, unsigned nbytes);
+IFDEF U_read
+PUBLIC _read
+_read:
 IFDEF __ELKS__
-	mov ax, 4  ; SYS_write.
-	jmp sesys3  ; !! TODO(pts): Move it here if U_read is not defined.
+	mov al, 3  ; SYS_read.
+	jmp sesys3  ; !! TODO(pts): Move it here if U_write is not defined.
 ELSE  ; __ELKS__
-	mov byte ptr [__M+2], 4  ; *(char*)&_M.m_type = WRITE;
+	mov byte ptr [__M+2], 3  ; *(char*)&_M.m_type = READ;
 IFDEF U_read
 	jmp readwrite
 ELSE
@@ -387,7 +491,7 @@ IFDEF U_close
 PUBLIC _close
 _close:
 IFDEF __ELKS__
-	mov ax, 6  ; SYS_close.
+	mov al, 6  ; SYS_close.
 	jmp sesys3
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 6  ; *(char*)&_M.m_type = CLOSE;
@@ -425,12 +529,171 @@ _umask:
 ;   return((mode_t)callm1(FS, UMASK, (int)complmode, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
 ; }
 IFDEF __ELKS__
-	mov ax, 60  ; SYS_umask.
+	mov al, 60  ; SYS_umask.
 	jmp sesys3
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 60  ; *(char*)&_M.m_type = UMASK;
 	jmp callxarg1  ; Argument complmode will be copied to _M.m1_i1.
 ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; pid_t fork(void);
+IFDEF U_fork
+PUBLIC _fork
+_fork:
+IFDEF __ELKS__
+	mov al, 2  ; SYS_fork.
+	jmp sesys
+ELSE
+	mov byte ptr [__M+2], 2  ; *(char*)&_M.m_type = FORK;
+	xor ax, ax  ; MM.
+	jmp callxmmfs  ; return(callm1(MM, FORK, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
+ENDIF  ; __ELKS__
+ENDIF
+
+; pid_t wait(int *_status_loc);
+IFDEF U_wait
+PUBLIC _wait
+_wait:
+IFDEF __ELKS__
+; ELKS int wait(status) int *status; {
+;   return wait4(-1, status, 0, (void*) 0);
+; }
+	push di  ; Save.
+	mov al, 7  ; SYS_wait4.
+	xor di, di  ; Argument 4 (_usage) of SYS_wait4.
+	xor dx, dx  ; Argument 3 (_options) of SYS_wait4.
+	mov bx, sp
+	mov cx, [bx+4]  ; Argument 2 (_status_loc) of SYS_wait4.
+	mov bx, -1  ; Argument 1 (_pid) of SYS_wait4.
+	call sesys
+	pop di  ; Restore.
+	ret
+ELSE
+; MINIX PUBLIC int wait(status) int *status; {
+;   int k;
+;   k = callm1(MM, WAIT, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR);
+;   if (k >= 0 && status != 0) *status = _M.m2_i1;
+;   return(k);
+; }
+	mov byte ptr [__M+2], 7  ; *(char*)&_M.m_type = WAIT;
+	xor ax, ax  ; MM.
+	call callxmmfs
+	test ax, ax
+	js waitret
+	mov bx, sp
+	cmp word ptr [bx+2], 0  ; Argument status.
+	je waitret
+	mov dx, word ptr [__M+4]  ; _M.m2_i1.
+	mov bx, [bx+2]
+	mov [bx], dx  ; *status = _M.m2_i1;
+waitret:
+	ret
+ENDIF  ; __ELKS__
+ENDIF
+
+; pid_t wait4(pid_t _pid, int *_status_loc, int _options, struct rusage *_usage);
+IFDEF __ELKS__
+IFDEF U_wait4
+PUBLIC _wait4
+_wait4:
+	mov ax, 7  ; SYS_wait4.
+sesys4:
+	mov bx, sp
+	xchg di, [bx+8]  ; DI := argument 4 (_usage) o SYS_wait4. Also save DI.
+	mov dx, [bx+6]  ; Argument 3 (_options) of SYS_wait4.
+	mov cx, [bx+4]  ; Argument 2 (_status_loc) of SYS_wait4.
+	mov bx, [bx+2]  ; Argument 1 (_pid) of SYS_wait4.
+	call sesys
+	xchg di, [bx+8]  ; Restore DI.
+	ret
+ENDIF
+ENDIF  ; __ELKS__
+
+; pid_t getpid(void);
+IFDEF U_getpid
+PUBLIC _getpid
+_getpid:
+IFDEF __ELKS__
+; ELKS pid_t getpid() {
+;   int ppid_ignored;
+;   return syscall1(SYS_getpid, (int) &ppid_ignored);
+; }
+	push ax  ; Allocate stack space for ppid_ignored.
+	mov al, 20  ; SYS_getpid.
+	mov bx, sp  ; BX(argument 1 of SYS_getpid)  := &ppid_ignored.
+	call sesys
+	pop bx  ; Clean up ppid_ignored.
+	ret
+ELSE
+	mov byte ptr [__M+2], 20  ; *(char*)&_M.m_type = GETPID;
+	xor ax, ax  ; MM.
+	jmp callxmmfs  ; return(callm1(MM, GETPID, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
+ENDIF  ; __ELKS__
+ENDIF
+
+; pid_t time(time_t *_tloc);
+IFDEF U_time
+PUBLIC _time
+_time:
+IFDEF __ELKS__
+; ELKS time_t time(_tloc) time_t *_tloc; {
+;   struct timeval rv;
+;   if (syscall2(SYS_gettimeofday, (int) &rv, 0) < 0) return -1;
+;   if (_tloc) *_tloc = rv.tv_sec;
+;   return rv.tv_sec;
+; }
+	sub sp, 8  ; Allocate stack space for rv.
+	mov al, 62  ; SYS_gettimeofday.
+	mov bx, sp  ; BX (argument 1 of SYS_gettimeofday) := &rv.
+	xor cx, cx  ; CX (argument 2 of SYS_gettimeofday) := 0.
+	call sesys
+	test ax, ax
+	jns timeok
+	mov ax, -1
+	cwd  ; DX := -1.
+	jmp timedone
+timeok:
+	mov bx, sp
+	mov dx, [bx+2]  ; High word of rv.tv_sec.
+	mov ax, [bx]    ; Low  word of rv.tv_sec.
+	mov bx, [bx+10]  ; _tloc.
+	test bx, bx  ; if (_tloc != (long *) 0).
+	jz timedone
+	mov [bx+2], dx  ; High word of:  *_tloc = l;
+	mov [bx], ax    ; Low  word of:  *_tloc = l;
+timedone:
+	add sp, 8  ; Clean up low rv.
+	ret
+ELSE
+; MINIX PUBLIC long time(_tloc) time_t *_tloc;
+; {
+;   int k;
+;   long l;
+;   if (callm1(FS, TIME, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR) != 0) return -1L;
+;   l = _M.m2_l1;
+;   if (_tloc != (long *) 0) *_tloc = l;
+;   return(l);
+; }
+	mov byte ptr [__M+2], 13  ; *(char*)&_M.m_type = TIME;
+	call _callx
+	test ax, ax
+	jz timeok
+	mov ax, -1
+	cwd  ; DX := -1.
+	ret
+timeok:
+	mov dx, word ptr [__M+12]  ; High word of: l = _M.m2_l1;
+	mov ax, word ptr [__M+10]  ; Low  word of: l = _M.m2_l1;
+	mov bx, sp
+	mov bx, [bx+2]  ; _tloc.
+	test bx, bx  ; if (_tloc != (long *) 0).
+	jz timesaved
+	mov [bx+2], dx  ; High word of:  *_tloc = l;
+	mov [bx], ax    ; Low  word of:  *_tloc = l;
+timesaved:
+	ret
+ENDIF  ; __ELKS__
 ENDIF
 
 ; int fstat(int _fd, struct stat *_statbuf);
@@ -457,7 +720,7 @@ IFDEF U_open
 PUBLIC _open
 _open:
 IFDEF __ELKS__
-	mov ax, 5  ; SYS_open.
+	mov al, 5  ; SYS_open.
 	jmp sesys3
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 5  ; *(char*)&_M.m_type = OPEN;
@@ -490,7 +753,7 @@ IFDEF U_open00
 PUBLIC _open00
 _open00:
 IFDEF __ELKS__
-	mov ax, 5  ; SYS_open.
+	mov al, 5  ; SYS_open.
 	mov bx, sp
 	xor cx, cx  ; CX (_oflag) := 0. No need to set DX (_mode) when _oflag == 0 == O_RDONLY.
 	jmp sesys1b
@@ -579,7 +842,7 @@ IFDEF U_creat
 PUBLIC _creat
 _creat:
 IFDEF __ELKS__
-	mov ax, 5  ; SYS_open.
+	mov al, 5  ; SYS_open.
 	mov bx, sp
 	;mov dx, 666q
 	mov dx, [bx+4]  ; _mode.
@@ -619,7 +882,7 @@ _chmod:
 ;   return(callm3(FS, CHMOD, _mode, _path));
 ; }
 IFDEF __ELKS__
-	mov ax, 15  ; SYS_chmod.
+	mov al, 15  ; SYS_chmod.
 	jmp sesys3
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 15  ; *(char*)&_M.m_type = CHMOD;
@@ -649,7 +912,7 @@ _remove:
 ;   return(callm3(FS, UNLINK, 0, name));
 ; }
 IFDEF __ELKS__
-	mov ax, 10  ; SYS_unlink.
+	mov al, 10  ; SYS_unlink.
 	jmp sesys3
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 10  ; *(char*)&_M.m_type = UNLINK;
@@ -668,7 +931,7 @@ _rename:
 ;   return(callm1(FS, RENAME, strlen(_oldpath) + 1, strlen(_newpath) + 1, 0, (char *) _oldpath, (char *) _newpath, NIL_PTR));
 ; }
 IFDEF __ELKS__
-	mov ax, 38  ; SYS_rename.
+	mov al, 38  ; SYS_rename.
 	jmp sesys3  ; TODO(pts): Move it closer to sesys3, to make it a short jump.
 ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 38  ; *(char*)&_M.m_type = RENAME;
@@ -719,7 +982,7 @@ ELSE  ; __ELKS__
 ;  struct termios dummy;  /* sizeof(struct termios) == 36 == 0x24 on i386, == 32 == 0x20 on i86. */
 ;  m.TTY_REQUEST = (unsigned) (0x80245408L & ~(unsigned) 0);  /* TCGETS == (int) 0x80245408L on Minix 2.0.4 */  /* #define TTY_REQUEST COUNT */  /* #define COUNT m2_i3 */
 ;  m.TTY_LINE = fd;  /* #define TTY_LINE DEVICE */  /* #define DEVICE m2_i1 */
-;  m.ADDRESS = (char *) &dummy;  /* #define ADDRESS m2_p1 */ 
+;  m.ADDRESS = (char *) &dummy;  /* #define ADDRESS m2_p1 */
 ;  return((callx(FS, IOCTL) >= 0);  /* FS == 1; IOCTL == 54. */  /* Actually, Minix does (...) == 0. */
 ; }
 ; MINIX int isatty(fd) int fd; {  /* Our implementation below, compatible with Minix 1.5--2.0.4--3.2.0. */
@@ -798,6 +1061,10 @@ IFDEF __ELKS__
 	mov ax, [bx+4]  ; The ELKS kernel has modifier the argument offset in place. This is the low  word.
 	jmp lseekret
 lseekerr:
+IFDEF U_errno
+	neg ax
+	mov [_errno], ax
+ENDIF
 	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
 	cwd  ; DX := AX (== -1).
 lseekret:
@@ -899,6 +1166,10 @@ commonstat:
 	mov [bx+4], cx  ; Zero-extend 16-bit st_ino (word ptr [bx+2]) to 32 bis. (CX == 0.)
 	jmp commonstatret
 commonstaterr:
+IFDEF U_errno  ; TODO(pts): `jmp sesyserr', or even `js sesyserr' if close enough.
+	neg ax
+	mov [_errno], ax
+ENDIF
 	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
 commonstatret:
 	ret
@@ -1087,6 +1358,766 @@ brkret:
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
+; See also the implementation of the signal libc function.
+;
+; The ELKS kernel calls ___system_signal like this: it pushes the signal
+; number (signum); if it is a new kernel (such as ELKS 0.7.0, or maybe a bit
+; order), it pushes the return segment; it push the return offset; it jumps
+; to ___system_signal. (It doesn't push FLAGS.) (It doesn't save any
+; registers.) Upon return, the kernel expects that ___system_signal pops
+; everything above.
+IFDEF U___system_signal
+PUBLIC ___system_signal
+___system_signal:
+IFDEF __ELKS__
+	pushf
+	push ax
+	push bx
+	push cx
+	push dx
+	push si
+	push di
+	push bp
+	push es
+	mov bx, sp
+	mov ax, cs
+	cmp [bx+20], ax  ; This is a best effort guess to decide whether the (new) kernel has pushed CS. !! TODO(pts): Do it for 100% by checking for EINVAL in SYS_signal.
+	pushf
+	jne ssigold
+	inc bx
+	inc bx  ; Skip over the CS pushed by the new kernel.
+ssigold:
+	mov bx, [bx+20]  ; BX := signum.
+	push bx  ; Argument signum of the signal handler.
+	add bx, bx
+	; TODO(pts): Do a bounds-check (1 <= BX < NSIG) on BX.
+	call [bx+___sigtable-2]  ; Offset by 2 because no entry for signal 0.
+	pop cx  ; Clean up signum argument of `call bx' above.
+	popf  ; Get the result of `cmp [bx+20], ax' above.
+	pop es
+	pop bp
+	pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	jne ssigretold
+	popf
+	retf 2  ; Get rid of the signum too.
+ssigretold:
+	popf
+	ret 2  ; Get rid of the signum too.
+ELSE  ; __ELKS__
+	push ax  ; after interrupt, save all regs
+	push bx
+	push cx
+	push dx
+	push si
+	push di
+	push bp
+	push ds
+	push es
+	mov bx, sp
+	mov bx, [bx+18]         ; bx = signal number
+	mov ax, bx              ; ax = signal number
+	dec bx                  ; __sigtable[0] is for sig 1
+	add bx, bx              ; pointers are two bytes on 8088
+	mov bx, [bx+___sigtable]  ; bx = address of routine to call
+	push word ptr [__M+2]   ; push status of last system call; mtype
+	push ax                 ; func called with signal number as arg
+	call bx
+	pop ax  ; get signal number off stack
+	pop word ptr [__M+2]  ; restore status of previous system call; mtype
+	pop es  ; signal handling finished
+	pop ds
+	pop bp
+	pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	add sp, 2  ; remove signal number from stack
+	iret
+ENDIF  ; __ELKS__
+ENDIF
+
+; void (*signal((int _sig, void (*_func)(int))))(int);
+IFDEF U_signal
+PUBLIC _signal
+_signal:
+IFDEF __ELKS__
+; It is assumed the kernel will never give us a signal we haven't
+; _explicitly_ asked for.
+;
+; The kernel need only save space for _one_ function pointer
+; (to __system_signal) and must deal with SIG_DFL and SIG_IGN
+; in kernel space.
+;
+; When a signal is required, the kernel must set all the registers as if
+; returning from a interrupt normally then push the number of the signal
+; to be generated, push the current pc value, then set the pc to the
+; address of the __system_signal function.
+;
+; ELKS void (*signal(_sig, _handler))()
+; int _sig;
+; void (*_handler)(int);
+; {
+;   void (*old_handler)(int);
+;   int rv;
+;   if( _sig < 1 || _sig >= NSIG ) { errno = EINVAL; return SIG_ERR; }
+;   if( _handler == SIG_DFL || _handler == SIG_IGN )
+;     rv = syscall2(SYS_signal, _sig, (int) _handler);
+;   else
+;     rv = syscall2(SYS_signal, _sig, (int) __system_signal);
+;   if( rv < 0 ) return SIG_ERR;
+;   old_handler = __sigtable[_sig-1];
+;   __sigtable[_sig-1] = _handler;
+;   return rv == 0 ? (void(*)(int)) SIG_DFL : rv == 1 ? (void(*)(int)) SIG_IGN : old_handler;
+; }
+ELSE  ; __ELKS__
+; /* This is for educational purposes. The ELKS variant is used on Minix as well. */
+; void (*signal(_sig, _handler))()
+; int _sig;
+; void (*_handler)(int);
+; {
+;   int r;
+;   void (*old) ();
+;   old = __sigtable[_sig - 1];
+;   _M.m6_i1 = _sig;
+;   if (_handler == SIG_IGN || _handler == SIG_DFL) {
+;     /* Keep old signal handler until it is completely de-installed */
+;     _M.m6_f1 = (void (*)())_handler;
+;   } else {
+;     /* Use new signal handler immediately (old one may not exist) */
+;     __sigtable[_sig - 1] = _handler;
+;     _M.m6_f1 = __system_signal;
+;   }
+;   r = callx(MM, SIGNAL);
+;   if (r < 0) {
+;     __sigtable[_sig - 1] = old;  /* undo any pre-installation */
+;     return((void (*) ()) r);
+;   }
+;   __sigtable[_sig - 1] = _handler;  /* redo any pre-installation */
+;   if (r == 1) return(SIG_IGN);
+;   return(old);
+; }
+ENDIF  ; __ELKS__
+	push si  ; Save.
+	push bp  ; Save.
+	mov bp, sp
+	mov si, [bp+6]  ; Argument _sig.
+	mov bp, [bp+8]  ; Argument _handler.
+	cmp si, 1
+	jl signal5
+	cmp si, NSIG  ; NSIG.
+	jl signal7
+signal5:
+IFDEF U_errno
+	mov word ptr [_errno], 22  ; EINVAL.
+ENDIF
+signal6:
+	mov ax, -1  ; SIG_ERR.
+	jmp signaldone
+signal7:
+IFDEF __ELKS__
+	mov dx, cs  ; Segment of ___system_signal, for new ELKS kernels (such as 0.7.0, or a bit earlier).
+ENDIF  ; __ELKS__
+	mov cx, offset ___system_signal  ; Argument 2 of SYS_signal.
+	cmp bp, 1  ; SIG_IGN == 1. SIG_DFL == 0.
+	ja signal9
+IFDEF __ELKS__
+	xor dx, dx  ; High word of _handler, for new ELKS kernels (such as 0.7.0, or a bit earlier).
+ENDIF  ; __ELKS__
+	mov cx, bp  ; Argument 2 of SYS_signal.
+signal9:
+IFDEF __ELKS__
+	mov bx, si  ; Argument 1 of SYS_signal: _sig.
+	mov al, 48  ; SYS_signal.
+	call sesys
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 48  ; *(char*)&_M.m_type = SIGNAL;
+	mov word ptr [__M+4], si  ; _M.m6_i1 = _sig;
+	mov word ptr [__M+14], cx  ; _M.m6_f1.
+	xor ax, ax  ; MM.
+	call callxmmfs
+ENDIF  ; __ELKS__
+	test ax, ax
+	js signal6
+	mov bx, offset ___sigtable-2
+	add bx, si
+	add bx, si
+	xchg [bx], bp  ; old_handler = __sigtable[_sig-1];  __sigtable[_sig-1] = _handler;
+	cmp ax, 1  ; SIG_IGN == 1. SIG_DFL == 0.
+	jbe signaldone
+	xchg ax, bp  ; AX := old_handler; BP := junk.
+signaldone:
+	pop bp  ; Restore.
+	pop si  ; Restore.
+	ret
+ENDIF
+
+; int execv(char *_path, char *_argv[]);
+IFDEF U_execv
+PUBLIC _execv
+_execv:
+; int execv(_path, _argv)
+; char *_path;
+; char **_argv;
+; {
+;   return execve(_path, _argv, environ);
+; }
+IFNDEF U_execve
+U_execve =
+ENDIF
+	mov bx, sp
+	push [_environ]
+	push word ptr [bx+4]
+	push word ptr [bx+2]
+	call _execve
+	add sp, 6  ; Clean up arguments of _execve above.
+	ret
+ENDIF
+
+; int execve(char *_path, char *_argv[], char *_envp[]);
+IFDEF U_execve
+PUBLIC _execve
+_execve:
+IFDEF __ELKS__
+; int execve(_path, _argv, _envp)
+; char *_path;
+; char *_argv[];
+; char *_envp[];
+; {
+;   char **p;
+;   int _argv_len=0, _argv_count=0;
+;   int _envp_len=0, _envp_count=0;
+;   int stack_bytes;
+;   unsigned short * pip;
+;   char * pcp, * stk_ptr, *baseoff;
+;   int rv;
+;   unsigned l;
+;   for(p=_argv; p && *p && _argv_len >= 0; p++) {
+;     _argv_count++; _argv_len += strlen(*p)+1;
+;   }
+;   for(p=_envp; p && *p && _envp_len >= 0; p++) {
+;     _envp_count++; _envp_len += strlen(*p)+1;
+;   }
+;   stack_bytes = 2 + _argv_count * 2 + 2 + _argv_len + _envp_count * 2 + 2 + _envp_len;
+;   if( _argv_len < 0 || _envp_len < 0 || stack_bytes <= 0 || (int)(stk_ptr = (char*)sbrk(stack_bytes)) == -1) {
+;     errno = ENOMEM;
+;     return -1;
+;   }
+;   pip=(unsigned short *) stk_ptr;
+;   pcp=stk_ptr+2*(1+_argv_count+1+_envp_count+1);
+;   baseoff = stk_ptr;
+;   *pip++ = _argv_count;
+;   for(p=_argv; p && *p; p++) {
+;     *pip++ = pcp-baseoff;
+;     l = strlen(*p)+1;
+;     memcpy(pcp, *p, l);
+;     pcp += l;
+;   }
+;   *pip++ = 0;
+;   for(p=_envp; p && *p; p++) {
+;     *pip++ = pcp-baseoff;
+;     l = strlen(*p)+1;
+;     memcpy(pcp, *p, l);
+;     pcp += l;
+;   }
+;   *pip++ = 0;
+;   rv = syscall3(SYS_execve, (int) _path, (int) stk_ptr, stack_bytes);
+;   sbrk(-stack_bytes);
+;   return rv;
+; }
+ELSE  ; __ELKS__
+; int execve(_path, _argv, _envp)
+; char *_path;
+; char *_argv[];
+; char *_envp[];
+; {
+;   char **argtop;
+;   char **envtop;
+;   int nargs;                    /* number of args */
+;   int nenvps;                   /* number of environment strings */
+;   char *hp, **ap, *p;
+;   int i, stackbytes, npointers, overflow, temp;
+;   char *stack;
+;   /* Count the argument pointers and environment pointers. */
+;   for (argtop = _argv; *argtop != (char *) 0; ) argtop++;
+;   for (envtop = envp; *envtop != (char *) 0; ) envtop++;
+;   nargs = argtop - _argv;
+;   nenvps = envtop - envp;
+;   /* Decide how big a stack is needed. Be paranoid about overflow. */
+;   overflow = 0  /* FALSE */;
+;   npointers = 1 + nargs + 1 + nenvps + 1;       /* 1's for argc and NULLs */
+;   stackbytes = nargs + nenvps;          /* for nulls in strings */
+;   if (nargs < 0 || nenvps < 0 || stackbytes < nargs || npointers < stackbytes)
+;         overflow = 1  /* TRUE */;
+;   for (i = sizeof(char *); i != 0; i--) {
+;         temp = stackbytes + npointers;
+;         if (temp < stackbytes) overflow = 1  /* TRUE */;
+;         stackbytes = temp;
+;   }
+;   for (i = 0, ap = _argv; i < nargs; i++) {
+;         temp = stackbytes + strlen(*ap++);
+;         if (temp < stackbytes) overflow = 1  /* TRUE */;
+;         stackbytes = temp;
+;   }
+;   for (i = 0, ap = envp; i < nenvps; i++) {
+;         temp = stackbytes + strlen(*ap++);
+;         if (temp < stackbytes) overflow = 1  /* TRUE */;
+;         stackbytes = temp;
+;   }
+;   temp = stackbytes + sizeof(char *) - 1;
+;   if (temp < stackbytes) overflow = 1  /* TRUE */;
+;   stackbytes = (temp / sizeof(char *)) * sizeof(char *);
+;   /* Check for overflow before committing sbrk. */
+;   if (overflow || stackbytes > ARG_MAX) {
+;         errno = ENOMEM;  /* In Minix, this is E2BIG. */
+;         return(-1);
+;   }
+;   /* Allocate the stack. */
+;   stack = sbrk(stackbytes);
+;   if (stack == (char *) -1) {
+;         errno = ENOMEM;  /* In Minix, this is E2BIG. */
+;         return(-1);
+;   }
+;   /* Prepare the stack vector and argc. */
+;   ap = (char **) stack;
+;   hp = &stack[npointers * sizeof(char *)];
+;   *ap++ = (char *) nargs;
+;   /* Prepare the argument pointers and strings. */
+;   for (i = 0; i < nargs; i++) {
+;         *ap++ = (char *) (hp - stack);
+;         p = *_argv++;
+;         while ((*hp++ = *p++) != 0)
+;                 ;
+;   }
+;   *ap++ = (char *) 0;
+;   /* Prepare the environment pointers and strings. */
+;   for (i = 0; i < nenvps; i++) {
+;         *ap++ = (char *) (hp - stack);
+;         p = *envp++;
+;         while ((*hp++ = *p++) != 0)
+;                 ;
+;   }
+;   *ap++ = (char *) 0;
+;   /* Do the real work. */
+;   temp = callm1(MM  /* 0 */, EXEC  /* 59 */, strlen(_path) + 1, stackbytes, 0, _path, stack, 0);
+;   sbrk(-stackbytes);
+;   return(temp);
+; }
+ENDIF  ; __ELKS__
+	push si
+	push di
+	push bp
+	mov bp, sp
+IFNDEF U_strlen
+U_strlen =
+ENDIF
+IFDEF __ELKS__
+	sub sp, 10H  ; !! Word -10H[bp] is now unused.
+	xor ax, ax
+	mov -4[bp], ax  ; !! Fix assembly source style.
+	mov -6[bp], ax
+	xor di, di
+	mov -0aH[bp], ax
+	mov si, 0aH[bp]
+execve1:
+	test si, si
+	je execve2
+	cmp word ptr [si], 0
+	je execve2
+	cmp word ptr -4[bp], 0
+	jl execve2
+	inc word ptr -6[bp]  ; argv_count++;
+	mov bx, [si]
+	call __strlenbx
+	inc ax
+	add -4[bp], ax
+	inc si
+	inc si
+	jmp execve1
+execve2:
+	mov si, 0cH[bp]
+execve3:
+	test si, si
+	je execve4
+	mov ax, [si]
+	test ax, ax
+	je execve4
+	test di, di
+	jl execve4
+	inc word ptr -0aH[bp]  ; envp_count++;
+	xchg bx, ax
+	call __strlenbx
+	inc ax
+	add di, ax
+	inc si
+	inc si
+	jmp execve3
+execve4:
+	mov ax, -6[bp]
+	add ax, ax
+	add ax, 4
+	add ax, -4[bp]
+	mov si, -0aH[bp]
+	add si, si
+	add ax, si
+	inc ax
+	inc ax
+	add ax, di
+	mov -8[bp], ax
+	cmp word ptr -4[bp], 0
+	jl execve5
+	test di, di
+	jl execve5
+	test ax, ax
+	jle execve5
+	push ax
+	call _sbrk
+	pop cx  ; Clean up argument of _sbrk above.
+	mov cx, ds
+	mov es, cx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
+	mov di, ax
+	mov -0eH[bp], ax
+	cmp ax, -1
+	jne execve6
+execve5:
+IFDEF U_errno
+	mov word ptr [_errno], 12  ; ENOMEM.
+ENDIF
+	mov ax, -1
+	jmp near ptr execveret
+execve6:
+	mov ax, -6[bp]
+	inc ax
+	inc ax
+	add ax, -0aH[bp]
+	add ax, ax
+	inc ax
+	inc ax
+	mov si, di
+	add si, ax
+	mov -2[bp], si
+	mov -0cH[bp], di
+	mov ax, -6[bp]
+	stosw
+	mov si, 0aH[bp]
+execve7:
+	test si, si
+	je execve8
+	cmp word ptr [si], 0
+	je execve8
+	mov ax, -2[bp]
+	sub ax, -0cH[bp]
+	stosw
+	mov bx, [si]
+	call __strlenbx  ; Our _strlen doesn't ruin ES needed by stosw.
+	inc ax
+	push si  ; Save.
+	push di  ; Save.
+	xchg cx, ax  ; Argument n.
+	mov si, [si]  ; Argument s2.
+	mov di, -2[bp]  ; Argument s1.
+	rep movsb  ; memcpy(...). Our _memcpy doesn't ruin ES needed by stosw.
+	mov -2[bp], di
+	pop di  ; Restore.
+	pop si  ; Restore.
+	inc si
+	inc si
+	jmp execve7
+execve8:
+	xor ax, ax
+	stosw  ; *pip++ = 0;
+	mov si, 0cH[bp]
+execve9:  ; TODO(pts): Unify the code in execve7 and execve9.
+	test si, si
+	je execve10
+	cmp word ptr [si], 0
+	je execve10
+	mov ax, -2[bp]
+	sub ax, -0cH[bp]
+	stosw
+	mov bx, [si]
+	call __strlenbx  ; Our _strlen doesn't ruin ES needed by stosw.
+	inc ax
+	push si  ; Save.
+	push di  ; Save.
+	xchg cx, ax  ; Argument n.
+	mov si, [si]  ; Argument s2.
+	mov di, -2[bp]  ; Argument s1.
+	mov -2[bp], di
+	rep movsb  ; memcpy(...). Our _memcpy doesn't ruin ES needed by stosw.
+	pop di  ; Restore.
+	pop si  ; Restore.
+	inc si
+	inc si
+	jmp execve9
+execve10:
+	xor ax, ax
+	stosw  ; *pip++ = 0;
+	mov al, 11  ; SYS_execve.
+	mov bx, 8[bp]
+	mov cx, -0eH[bp]
+	mov dx, -8[bp]
+	call sesys  ; rv = syscall3(SYS_execve, (int) _path, (int) stk_ptr, stack_bytes);
+	xchg si, ax  ; SI := AX (rv); AX := junk.
+	mov ax, -8[bp]
+	neg ax
+	push ax
+	call _sbrk
+	pop cx  ; Clean up argument of _sbrk above.
+	mov ax, si
+ELSE ; __ELKS__
+	sub sp, 0cH
+	mov di, 0aH[bp]
+execve1:
+	cmp word ptr [di], 0
+	je execve2
+	inc di
+	inc di
+	jmp execve1
+execve2:
+	mov si, 0cH[bp]
+execve3:
+	mov ax, [si]
+	test ax, ax
+	je execve4
+	inc si
+	inc si
+	jmp execve3
+execve4:
+	sub di, 0aH[bp]
+	sar di, 1
+	mov -4[bp], di
+	sub si, 0cH[bp]
+	sar si, 1
+	mov -0aH[bp], si
+	mov -8[bp], ax
+	lea ax, 2[di]
+	add ax, si
+	inc ax
+	mov -0cH[bp], ax
+	mov ax, di
+	add ax, si
+	mov -2[bp], ax
+	test di, di
+	jl execve5
+	test si, si
+	jl execve5
+	cmp ax, di
+	jl execve5
+	mov ax, -0cH[bp]
+	cmp ax, -2[bp]
+	jge execve6
+execve5:
+	mov word ptr -8[bp], 1
+execve6:
+	mov di, 2
+	jmp execve8
+execve7:
+	mov -2[bp], ax
+	dec di
+	je execve9
+execve8:
+	mov ax, -2[bp]
+	add ax, -0cH[bp]
+	cmp ax, -2[bp]
+	jge execve7
+	mov word ptr -8[bp], 1
+	jmp execve7
+execve9:
+	mov si, 0aH[bp]
+execve10:
+	cmp di, -4[bp]
+	jge execve12
+	mov bx, [si]
+	inc si
+	inc si
+	call __strlenbx
+	add ax, -2[bp]
+	cmp ax, -2[bp]
+	jge execve11
+	mov word ptr -8[bp], 1
+execve11:
+	mov -2[bp], ax
+	inc di
+	jmp execve10
+execve12:
+	xor di, di
+	mov si, 0cH[bp]
+execve13:
+	cmp di, -0aH[bp]
+	jge execve15
+	mov bx, [si]
+	inc si
+	inc si
+	call __strlenbx
+	add ax, -2[bp]
+	cmp ax, -2[bp]
+	jge execve14
+	mov word ptr -8[bp], 1
+execve14:
+	mov -2[bp], ax
+	inc di
+	jmp execve13
+execve15:
+	mov ax, -2[bp]
+	inc ax
+	cmp ax, -2[bp]
+	jge execve16
+	mov word ptr -8[bp], 1
+execve16:
+	and ax, -2
+	mov -2[bp], ax
+	cmp word ptr -8[bp], 0
+	jne execve17
+	cmp ax, 1000H
+	jle execve18
+execve17:
+IFDEF U_errno
+	mov word ptr [_errno], 12  ; ENOMEM.
+ENDIF
+	mov ax, -1
+	jmp near ptr execveret
+execve18:
+	push ax
+	call _sbrk
+	pop cx  ; Clean up argument of _sbrk above.
+	mov si, ax
+	cmp ax, -1
+	je execve17
+	mov dx, -0cH[bp]
+	add dx, dx
+	mov cx, ax
+	add cx, dx
+	mov dx, -4[bp]
+	mov [si], dx
+	xor di, di
+	inc si
+	inc si
+execve19:
+	lea dx, 2[si]
+	cmp di, -4[bp]
+	jge execve21
+	mov bx, cx
+	sub bx, ax
+	mov [si], bx
+	mov bx, 0aH[bp]
+	mov bx, [bx]
+	mov -6[bp], bx
+	mov si, dx
+	add word ptr 0aH[bp], 2
+execve20:
+	mov bx, -6[bp]
+	mov dl, byte ptr [bx]
+	mov bx, cx
+	mov byte ptr [bx], dl
+	inc word ptr -6[bp]
+	inc cx
+	test dl, dl
+	jne execve20
+	inc di
+	jmp execve19
+execve21:
+	mov word ptr [si], 0
+	xor di, di
+	mov si, dx
+execve22:
+	lea dx, 2[si]
+	cmp di, -0aH[bp]
+	jge execve24
+	mov bx, cx
+	sub bx, ax
+	mov [si], bx
+	mov bx, 0cH[bp]
+	mov bx, [bx]
+	mov -6[bp], bx
+	mov si, dx
+	add word ptr 0cH[bp], 2
+execve23:
+	mov bx, -6[bp]
+	mov dl, byte ptr [bx]
+	mov bx, cx
+	mov byte ptr [bx], dl
+	inc word ptr -6[bp]
+	inc cx
+	test dl, dl
+	jne execve23
+	inc di
+	jmp execve22
+execve24:
+	mov word ptr [__M+12], ax  ; _M.m1_p2 = stack;
+	mov ax, 8[bp]  ; path.
+	mov word ptr [__M+10], ax  ; _M.m1_p1 = _path;
+	mov ax, -2[bp]  ; stackbytes.
+	mov word ptr [__M+6], ax  ; _M.m1_i2 = stackbytes.
+	mov bx, 8[bp]  ; path.
+	call __strlenbx
+	inc ax
+	mov word ptr [__M+4], ax  ; _M.m1_i1 = strlen(path) + 1.
+	mov byte ptr [__M+2], 59  ; *(char*)&_M.m_type = EXEC;
+	xor ax, ax  ; MM.
+	mov [si], ax  ; *ap++ = (char *) 0;
+	call callxmmfs  ; temp = callm1(MM  /* 0 */, EXEC  /* 59 */, strlen(path) + 1, stackbytes, 0, path, stack, 0);
+	xchg si, ax
+	mov ax, -2[bp]
+	neg ax
+	push ax
+	call _sbrk  ; sbrk(-stackbytes);
+	pop cx  ; Clean up argument of _sbrk above.
+	xchg ax, si  ;   return(temp);
+ENDIF ; __ELKS__
+execveret:
+	mov sp, bp
+	pop bp
+	pop di
+	pop si
+	ret
+ENDIF
+
+; --- Environment variables.
+
+; char *getenv(const char *_name);
+IFDEF U_getenv
+PUBLIC _getenv
+_getenv:
+	mov dx, ds
+	mov es, dx  ; ES := DS. This is needed even with `wcc -r', because the code generated by the OpenWatcom C compiler (wcc) for a switch--case may ruin ES.
+	mov cx, si  ; Save SI.
+	mov dx, di  ; Save DI.
+	mov bx, [_environ]
+getenvnextvar:
+	mov di, [bx]
+	inc bx
+	inc bx
+	test di, di
+	jz getenvdone
+	xchg ax, bx  ; Save BX. BX := junk.
+	mov bx, sp
+	mov si, [bx+2]  ; Argument _name.
+	xchg ax, bx  ; Restore BX. AX := junk.
+getenvnextbyte:
+	lodsb
+	cmp al, 0
+	je getenvendname
+	scasb
+	je getenvnextbyte
+	jmp short getenvnextvar
+getenvendname:
+	mov al, '='
+	scasb
+	jne getenvnextvar
+getenvdone:
+	xchg ax, di  ; EAX := EDI (pointer to var value); EDI := junk.
+	mov di, dx  ; Restore DI.
+	mov si, cx  ; Restore SI.
+	ret
+ENDIF
+
 ; --- Memory allocator: malloc(...), free(...), realloc(...).
 ;
 ; The code is based on /usr/src/lib/ansi/malloc.c in Minix 1.5.10. A
@@ -1094,15 +2125,15 @@ ENDIF
 ; the disassembly output (wdis -a) has been modified a bit manually.
 ;
 ; #define ASSERT_MALLOC(b)  /* empty */
-; 
+;
 ; typedef int malloc_intptr_t;  /* This is architecture-dependent. */
-; 
+;
 ; #define BRKALIGN      1024
 ; #define PTRSIZE       sizeof(char *)
 ; #define Align(x,a)    (((x) + (a - 1)) & ~(malloc_intptr_t)(a - 1))
 ; #define NextSlot(p)   (* (char **) ((p) - PTRSIZE))
 ; #define NextFree(p)   (* (char **) (p))
-; 
+;
 ; /* A short explanation of the data structure and algorithms.
 ;  * An area returned by malloc() is called a slot. Each slot
 ;  * contains the number of bytes requested, but preceeded by
@@ -1115,7 +2146,7 @@ ENDIF
 ;  * user visable part, so just after the next-slot pointer.
 ;  * Free slots are merged together by free().
 ;  */
-; 
+;
 ; static char *_bottom, *_top, *_empty;
 ;
 

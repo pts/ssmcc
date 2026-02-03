@@ -75,7 +75,7 @@ What's included in ssmcc:
 * assembler targeting 16-bit Intel x86 etc. (a copy of OpenWatcom v2 *wasm*)
 * linker (a copy of OpenWatcom v2 *wlink* and binary patcher tool to change
   the DOS MZ .exe output if *wlink* to an i86 a.out executable)
-* a small C library, libc with >50 functions implemented
+* a small C library, libc with >58 functions implemented
   (custom i86 assembly code in [ssmcc.asm](ssmcc.asm)); most of this is
   original contribution by pts
 * C library headers (`#include` files)
