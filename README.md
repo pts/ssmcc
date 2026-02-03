@@ -56,6 +56,11 @@ OK
 $ _
 ```
 
+Another real-world example ssmcc can compile (for both Minix i86 and ELKS)
+is the [minixbcc](https://github.com/pts/minixbcc) C compiler targeting
+Minix i86 and i386. See the documentation there on which `ssmcc` commands to
+run.
+
 Explanation of the commands above:
 
 1. We compile the assembler using the host GCC.
