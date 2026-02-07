@@ -9,7 +9,7 @@
 #  define _LIBCP(x) ()
 #endif
 
-#ifdef __MINIX__  /* Correct struct stat in Minix 1.5.10. */
+#ifdef __MINIX__  /* Correct struct stat in Minix 1.5.10--2.0.4. Minix 3.1 and the Minix v3 filesystem introduces sizeof(ino_t) == 4. */
   struct stat {
     dev_t st_dev;        /* major/minor device number */
     ino_t st_ino;        /* i-node number */
@@ -26,7 +26,7 @@
   typedef char _LIBC_assert_sizeof_struct_stat[sizeof(struct stat) == 30 ? 1 : -1];  /* No padding bytes for alignment. */
 #endif
 
-#ifdef __ELKS__  /* Correct struct stat in ELKS Dev86 0.6.21. */
+#ifdef __ELKS__  /* Correct struct stat in ELKS Dev86 0.16.21. */
   struct stat {
     dev_t st_dev;  /* 16 bits in ELKS 0.2.0--0.8.1. */
     ino_t st_ino;  /* 32 bits in ELKS 0.2.0, but in ELKS 0.2.0 it was 16 bits, even in `struct stat'. The libc functions stat(...), fstat(...) and lstat(...) always use 32 bits. */
