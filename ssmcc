@@ -66,13 +66,18 @@ else
   tpath="$PATH"
 fi
 
-## Figure out the target operating system ("$os").
-case "$1" in
- -belks) iselks=1; cdefs="-D__ELKS__ -D__ELKS -D__elks__ -D__elks -D__unix__"; wasmdefs="-Wc,-d__ELKS__"; shift ;;  # Dev86 has -D__ELKS__ -D__unix__.
- -bminix | -bminixi86) iselks=0; cdefs="-D__MINIX__ -D__MINIX -D__minix__ -D__minix -D__unix__"; wasmdefs="-Wc,-d__MINIX__"; shift ;;  # The ACK ANSI C compiler 1.202 on Minix >=1.7.0 has -D__MINIX. The non-ANSI ACK 3.1 C compiler on Minix 1.5.10 doesn't have anything.
- elksemu | --elksemu) shift; exec "$elksemu" "$@"; exit 1 ;;
- *) echo "fatal: please specify -bminix or -belks first" >&2; exit 3 ;;
-esac
+## Figure out the target operating system ("$iselks") and memory ("$heapstack").
+case "$1" in elksemu | --elksemu) shift; exec "$elksemu" "$@"; exit 1 ;; esac
+iselks=; heapstack=max; cdefs=; wasmdefs=
+while :; do
+  case "$1" in
+   -belks) iselks=1; cdefs="-D__ELKS__ -D__ELKS -D__elks__ -D__elks -D__unix__"; wasmdefs="-Wc,-d__ELKS__"; shift; continue ;;  # Dev86 has -D__ELKS__ -D__unix__.
+   -bminix | -bminixi86) iselks=0; cdefs="-D__MINIX__ -D__MINIX -D__minix__ -D__minix -D__unix__"; wasmdefs="-Wc,-d__MINIX__"; shift; continue ;;  # The ACK ANSI C compiler 1.202 on Minix >=1.7.0 has -D__MINIX. The non-ANSI ACK 3.1 C compiler on Minix 1.5.10 doesn't have anything.
+   -mheapstack=*) heapstack="${1#*=}"; shift; continue ;;
+  esac
+  break
+done
+if test -z "$iselks"; then  echo "fatal: please specify -bminix or -belks first" >&2; exit 3 ; fi
 cdefs="-D__SSMCC__ -D__SIZEOF_INT__=2 -D__SIZEOF_LONG__=4 -D__SIZEOF_POINTER__=2 $cdefs"; wasmdefs="-Wc,-d__SSMCC__ $wasmdefs"
 
 ## Figure out the system include directory.
@@ -115,7 +120,10 @@ rm -f "$libcofn"
 
 ## Change the first 0x22 bytes of the executable file, i.e. replace the DOS MZ .exe header with the Minix and ELKS a.out header.
 "$perl" -we 'use integer; use strict;
-    my($fn, $iselks, $vflag) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    my($fn, $iselks, $vflag, $heapstack) = @ARGV; my $fno = $fn; substr($fno, 0, 0) = "./" if $fno !~ m@^[.\w/]@;
+    my $heapstack0 = $heapstack;
+    $heapstack = ($heapstack eq "max") ? 0x10000 : ($heapstack eq "min") ? 0x200 : ($heapstack =~ m@^0[xX]([0-9a-fA-F]+)\Z(?!\n)@) ? hex($1) : ($heapstack =~ m@^(0[0-7]*)\Z(?!\n)@) ? hex($1) : ($heapstack =~ m@^(\d+)\Z(?!\n)@) ? int($1) : undef;  # Minix `chmem =...` value.
+    die("fatal: bad unsigned integer for -mheapstack=: $heapstack0\n") if !defined($heapstack);
     my $os = $iselks ? "ELKS" : "Minix i86";
     print(STDERR "ssmcc: converting DOS MZ .exe program to $os a.out executable: $fn\n") if $vflag;
     die("fatal: error opening: $fn\n") if !open(F, "+< $fno");
@@ -132,14 +140,18 @@ rm -f "$libcofn"
     my $a_unused = 0;  # Must be 0 for Minix.
     my $a_version = 0;  # Must be 0 for Minix.
     my $a_text = $size - $edata - 0x20;
+    die("fatal: a_text too large (too much code): $a_text: $fn\n") if $a_text > 0xff00;  # 0xff00 is the Minix 1.5.10 maximum.
     my $a_data = $edata;
     my $a_bss = (($ss << 4 | $sp) - 1) - ($size - 0x20);  # -1 is because of `wlink op stack=1`.
     my $a_entry = 0;  # Must be 0 for Minix 1.5.10.
-    my $a_total = $iselks ? 0xfff0 : 0x10000;  # Typical to maximize the data segment. ELKS would treat 0x10000 as 0, too little for sbrk(...). 0xffff gives: argument list too long.
+    my $a_total = $a_data + $a_bss;
+    die("fatal: a_data+a_bss too large: $a_total: $fn\n") if $a_total > 0xfe00;  # Leave 0x200 bytes for stack (including argv strings and environ strings).
+    my $a_total_max = $iselks ? 0xfff0 : 0x10000;  # Typical to maximize the data segment. ELKS would treat 0x10000 as 0, too little for sbrk(...). 0xffff gives: argument list too long.
+    $a_total = ($a_total + $heapstack <= $a_total_max) ? $a_total + $heapstack : $a_total_max;
     my $a_syms = 0;  # Exeutable stripped.
     my $instr2 = "\xfc\x58";  # Put `cld ++ pop ax` back to the beginning of _cstart_.
     $_ = pack("a2CCCCvV6a2", $a_magic, $a_flags, $a_cpu, $a_hdrlen, $a_unused, $a_version, $a_text, $a_data, $a_bss, $a_entry, $a_total, $a_syms, $instr2);
     die("fatal: error writing header: $fn\n") if (syswrite(F, $_, 0x22) or 0) != 0x22;
     # TODO(pts): Remove the trailing NUL bytes at the end of .text, make $a_text smaller.
-    ' "$ofn" "$iselks" "$vflag" || exit "$?"
+    ' "$ofn" "$iselks" "$vflag" "$heapstack" || exit "$?"
 # chmod +x -- "$ofn"  # Not needed, owcc makes it executable on Linux.
