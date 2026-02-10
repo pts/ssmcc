@@ -37,8 +37,25 @@ $ ssmcc -belks  -Os -W -Wall -o myprog.lk myprog.c  # Targets ELKS.
 ssmcc accepts the same command-line arguments as owcc (the OpenWatcom v2
 C compiler Unix driver), which is similar to GCC and Clang.
 
-Use ssmcc to compile some real code (the
-[mininasm](https://github.com/pts/mininasm) assembler):
+A simple real-world example ssmcc can compile is the decomp16 decompressor
+of Unix LZW-compressed files (.Z):
+
+```
+$ wget -O decomp16.c.orig https://github.com/ghaerr/elks/raw/refs/heads/master/elkscmd/minix1/decomp16.c
+$ sed 's@read\([(].*[)] != BUFSZ\)@full_read\1@' <decomp16.c.orig >decomp16.c
+$ ./ssmcc -bminixi86 -mheapstack=min -Os -W -Wall -o decomp16.mx decomp16.c
+$ ./ssmcc -belks     -mheapstack=min -Os -W -Wall -o decomp16.lk decomp16.c
+```
+
+Replacing a call of read(...) with full_read(...) is necessary to make it
+work on ELKS, because on ELKS, the read(2) system call can do a short read
+on pipes.
+
+Unfortunately elksemu is not able to run *decomp16.lk*, because elksemu
+can't emulate the fork(2) system call properly.
+
+Another real-world example ssmcc can compile is the
+[mininasm](https://github.com/pts/mininasm) assembler:
 
 ```
 $ git clone https://github.com/pts/mininasm
