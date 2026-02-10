@@ -41,6 +41,8 @@ ssize_t write _LIBCP((int _fd, const char *_buf, size_t _nbytes));
 off_t lseek _LIBCP((int _fd, off_t _offset, int _whence));
 int close _LIBCP((int _fd));
 int isatty _LIBCP((int _fd));
+int pipe(int _pipefd[2]);
+int dup(int _oldfd);
 
 int unlink _LIBCP((const char *_path));  /* Same as remove(...) in <stdio.h>. */
 

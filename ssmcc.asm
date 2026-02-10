@@ -433,6 +433,16 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_dup
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_pipe
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 ;
 IFDEF DO_sesys3
 IFDEF U___sesys3
@@ -537,6 +547,22 @@ ELSE  ; __ELKS__
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
+; int dup(int _oldfd);
+IFDEF U_dup
+PUBLIC _dup
+_dup:
+; MINIX PUBLIC int dup(fd) int fd; {
+;   return(callm1(FS, DUP, fd, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
+; }
+IFDEF __ELKS__
+	mov al, 41  ; SYS_dup.
+	jmp sesys3
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 41  ; *(char*)&_M.m_type = DUP;
+	jmp callxarg1  ; Argument _fd will be copied to _M.m1_i1.
+ENDIF  ; IFNDEF __ELKS__
+ENDIF
+
 ; pid_t fork(void);
 IFDEF U_fork
 PUBLIC _fork
@@ -544,7 +570,7 @@ _fork:
 IFDEF __ELKS__
 	mov al, 2  ; SYS_fork.
 	jmp sesys
-ELSE
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 2  ; *(char*)&_M.m_type = FORK;
 	xor ax, ax  ; MM.
 	jmp callxmmfs  ; return(callm1(MM, FORK, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
@@ -569,7 +595,7 @@ IFDEF __ELKS__
 	call sesys
 	pop di  ; Restore.
 	ret
-ELSE
+ELSE  ; __ELKS__
 ; MINIX PUBLIC int wait(status) int *status; {
 ;   int k;
 ;   k = callm1(MM, WAIT, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR);
@@ -625,7 +651,7 @@ IFDEF __ELKS__
 	call sesys
 	pop bx  ; Clean up ppid_ignored.
 	ret
-ELSE
+ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 20  ; *(char*)&_M.m_type = GETPID;
 	xor ax, ax  ; MM.
 	jmp callxmmfs  ; return(callm1(MM, GETPID, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR));
@@ -665,7 +691,7 @@ timeok:
 timedone:
 	add sp, 8  ; Clean up low rv.
 	ret
-ELSE
+ELSE  ; __ELKS__
 ; MINIX PUBLIC long time(_tloc) time_t *_tloc;
 ; {
 ;   int k;
@@ -709,9 +735,41 @@ _fstat:
 ; }
 	mov byte ptr [__M+2], 28  ; *(char*)&_M.m_type = FSTAT;
 	mov bx, sp
-	mov ax, [bx+4]  ; Argument buffer.
+	mov ax, [bx+4]  ; Argument _statbuf.
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
-	jmp callxarg1  ; Argument fd will be copied to _M.m1_i1.
+	jmp callxarg1  ; Argument _fd will be copied to _M.m1_i1.
+ENDIF  ; IFNDEF __ELKS__
+ENDIF
+
+; int pipe(int _pipefd[2]);
+IFDEF U_pipe
+PUBLIC _pipe
+_pipe:
+; MINIX PUBLIC int pipe(fild) int _pipefd[2]; {
+;   int k;
+;   k = callm1(FS, PIPE, 0, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR);
+;   if (k < 0) return(k);
+;   _pipefd[0] = _M.m1_i1;
+;   _pipefd[1] = _M.m1_i2;
+;   return(0);
+; }
+IFDEF __ELKS__
+	mov al, 42  ; SYS_pipe.
+	jmp sesys3
+ELSE  ; __ELKS__
+	mov byte ptr [__M+2], 42  ; *(char*)&_M.m_type = PIPE;
+	call _callx
+	test ax, ax
+	js piperet
+	mov bx, sp
+	mov bx, [bx+2]  ; Argument _pipefd.
+	mov ax, word ptr [__M+4]
+	mov [bx], ax  ; fild[0] = _M.m1_i1;
+	mov ax, word ptr [__M+6]
+	mov [bx+2], ax  ; fild[1] = _M.m1_i2;
+	xor ax, ax  ; Force return value 0. Minix 1.5.10 needs it.
+piperet:
+	ret
 ENDIF  ; IFNDEF __ELKS__
 ENDIF
 
@@ -890,8 +948,8 @@ ELSE  ; __ELKS__
 ENDIF  ; ELSE __ELKS__
 ENDIF
 
-; char *remove(const char *s, int c);
-; char *unlink(const char *s, int c);
+; char *remove(const char *_path);
+; char *unlink(const char *_path);
 ;
 ; Locates final occurrence of c (as unsigned char) in string s.
 IFDEF U_remove
@@ -1873,7 +1931,7 @@ execve10:
 	call _sbrk
 	pop cx  ; Clean up argument of _sbrk above.
 	mov ax, si
-ELSE ; __ELKS__
+ELSE  ; __ELKS__
 	sub sp, 0cH
 	mov di, 0aH[bp]
 execve1:
