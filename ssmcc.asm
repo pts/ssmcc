@@ -323,7 +323,7 @@ callxret:
 	ret
 ENDIF  ; IFNDEF __ELKS__
 
-; int write(int fd, const char *buffer, unsigned nbytes);
+; int write(int _fd, const char *_buffer, unsigned _nbytes);
 IFDEF U_write
 PUBLIC _write
 _write:
@@ -337,14 +337,20 @@ ELSE  ; __ELKS__
 	mov byte ptr [__M+2], 4  ; *(char*)&_M.m_type = WRITE;
 readwrite:
 	mov bx, sp
-	mov ax, word ptr [bx+2]  ; Argument fd.
+	mov ax, word ptr [bx+2]  ; Argument _fd.
 	mov word ptr [__M+4], ax  ; _M.m1_i1.
-	mov ax, word ptr [bx+4]  ; Argument buffer.
+	mov ax, word ptr [bx+4]  ; Argument _buffer.
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
-	mov ax, word ptr [bx+6]  ; Argument nbytes.
+	mov ax, word ptr [bx+6]  ; Argument _nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx  ; WASM is smart enough to generate a `jmp short' if the target is close enough.
 ENDIF  ; ELSE __ELKS__
+ENDIF
+;
+IFDEF U_full_read
+IFNDEF U_read
+U_read =
+ENDIF
 ENDIF
 ;
 IFDEF __ELKS__
@@ -457,10 +463,10 @@ ENDIF
 sesys3:  ; simple_elks_syscall3: at most 3 arguments.
 	mov bx, sp
 sesys3bxok:
-	mov dx, [bx+6]  ; Argument 3 (nbytes of read(...) and write(...)).
-	mov cx, [bx+4]  ; Argument 2 (buffer of read(...) and write(...)).
+	mov dx, [bx+6]  ; Argument 3 (_nbytes of read(...) and write(...)).
+	mov cx, [bx+4]  ; Argument 2 (_buffer of read(...) and write(...)).
 sesys1b:
-	mov bx, [bx+2]  ; Argument 1 (fd of read(...) and write(...)).
+	mov bx, [bx+2]  ; Argument 1 (_fd of read(...) and write(...)).
 sesys:
 	mov ah, 0
 	int 80h  ; ELKS syscall.
@@ -477,7 +483,7 @@ sesys3ret:
 ENDIF
 ENDIF  ; __ELKS__
 
-; int read(int fd, char *buffer, unsigned nbytes);
+; int read(int _fd, char *_buffer, unsigned _nbytes);
 IFDEF U_read
 PUBLIC _read
 _read:
@@ -490,11 +496,11 @@ IFDEF U_read
 	jmp readwrite
 ELSE
 	mov bx, sp
-	mov ax, word ptr [bx+2]  ; Argument fd.
+	mov ax, word ptr [bx+2]  ; Argument _fd.
 	mov word ptr [__M+4], ax  ; _M.m1_i1.
-	mov ax, word ptr [bx+4]  ; Argument buffer.
+	mov ax, word ptr [bx+4]  ; Argument _buffer.
 	mov word ptr [__M+10], ax  ; _M.m1_p1.
-	mov ax, word ptr [bx+6]  ; Argument nbytes.
+	mov ax, word ptr [bx+6]  ; Argument _nbytes.
 	mov word ptr [__M+6], ax  ; _M.m1_i2.
 	jmp _callx
 ENDIF
@@ -2180,6 +2186,58 @@ getenvdone:
 	xchg ax, di  ; EAX := EDI (pointer to var value); EDI := junk.
 	mov di, dx  ; Restore DI.
 	mov si, cx  ; Restore SI.
+	ret
+ENDIF
+
+
+; int full_read(int _fd, char *_buffer, unsigned _nbytes);
+;
+; Does a repeated read(...) until the buffer is full or read(...) fails.
+IFDEF U_full_read
+PUBLIC _full_read
+_full_read:
+; int full_read(_fd, _buffer, _nbytes)
+; int _fd;
+; char *_buffer;
+; unsigned _nbytes;
+; {
+;   register char *p = _buffer;
+;   int got;
+;   while (_nbytes != 0) {
+;     if ((got = read(_fd, p, _nbytes)) < 0) { if (p == _buffer) return got; break; }
+;     p += got; _nbytes -= got;
+;   }
+;   return p - _buffer;
+; }
+	push si  ; Save.
+	mov bx, sp
+	mov si, [bx+6]  ; p := argument _buffer.
+fullreadnext:
+	mov cx, [bx+8]  ; Argument _nbytes.
+	jcxz fullreaddone
+	mov ax, [bx+4]  ; Argument _fd.
+	push cx  ; Argument _nbytes.
+	push si  ; p.
+	push ax  ; Argument _fd.
+	call _read  ; Sets AX (got), ruins BX, CX, DX and FLAGS.
+	add sp, 6  ; Clean up arguments of _read above.
+	test ax, ax
+	js fullreaderr
+	add si, ax  ; p += got.
+	mov bx, sp
+fullreadcheck:
+	sub [bx+8], ax  ; _nbytes -= got.
+	jnz fullreadnext
+fullreaddone:
+	sub si, [bx+6]  ; Argument _buffer.
+fullreadxchg:
+	xchg ax, si  ; AX (return value) : = p - _buffer; SI := junk.
+	pop si  ; Restore.
+	ret
+fullreaderr:
+	sub si, [bx+6]  ; Argument _buffer.
+	jnz fullreadxchg
+	pop si  ; Restore.
 	ret
 ENDIF
 

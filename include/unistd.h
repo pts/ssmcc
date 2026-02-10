@@ -43,6 +43,10 @@ int close _LIBCP((int _fd));
 int isatty _LIBCP((int _fd));
 int pipe(int _pipefd[2]);
 int dup(int _oldfd);
+#define _LIBC_HAVE_FULL_READ 1
+ssize_t full_read  _LIBCP((int _fd, char *_buf, size_t _nbytes));
+#define _LIBC_HAVE_FULL_WRITE 1
+ssize_t full_write _LIBCP((int _fd, const char *_buf, size_t _nbytes));
 
 int unlink _LIBCP((const char *_path));  /* Same as remove(...) in <stdio.h>. */
 
