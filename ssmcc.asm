@@ -348,6 +348,11 @@ ENDIF  ; ELSE __ELKS__
 ENDIF
 ;
 IFDEF __ELKS__
+IFDEF U_read
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 IFDEF U_write
 IFNDEF DO_sesys3
 DO_sesys3 =
