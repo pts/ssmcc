@@ -1,16 +1,15 @@
 # ssmcc: simple small-model C compiler for i86 Unix-like, using OpenWatcom v2
 
 ssmcc is a simple C compiler toolchain using the small memory model (at most
-64 KiB of code per program, at most 64 KiB of data per program) in the
-generted code, targeting the 16-bit Intel x86 and the operating systems
-Minix i86 and ELKS, ssmcc is a cross-compiler: you compile your C program on
-Linux i386 or amd64, and you run them on Minix i86 or ELKS.
+64 KiB of code per program, at most 64 KiB of data per program) in the generated
+code, targeting the 16-bit Intel x86 and the operating systems Minix i86 and
+ELKS. ssmcc is a cross-compiler: you compile your C program on Linux i386 or
+amd64, and you run them on Minix i86 or ELKS.
 
 ssmcc is designed to run on any modern Linux i386 or Linux amd64 system
-out-of-the-box (it doesn't matter which distro). It's self-contained: the
-repository has all the programs it needs precompiled and saved to the the
-tools/ directory.
-
+out-of-the-box on all distributions. It is self-contained: the repository has
+all the programs it needs precompiled and saved to the the [tools/](./tools/)
+directory.
 
 Quick try on Linux (run the commands without the leading `$`):
 
@@ -47,9 +46,9 @@ $ ./ssmcc -bminixi86 -mheapstack=min -Os -W -Wall -o decomp16.mx decomp16.c
 $ ./ssmcc -belks     -mheapstack=min -Os -W -Wall -o decomp16.lk decomp16.c
 ```
 
-Replacing a call of read(...) with full_read(...) is necessary to make it
-work on ELKS, because on ELKS, the read(2) system call can do a short read
-on pipes.
+Replacing a call of `read(...)` with `full_read(...)` is necessary to make it
+work on ELKS, because on ELKS the read(2) system call can do a short read on
+pipes.
 
 Unfortunately elksemu is not able to run *decomp16.lk*, because elksemu
 can't emulate the fork(2) system call properly.
@@ -97,35 +96,33 @@ What's included in ssmcc:
 * assembler targeting 16-bit Intel x86 etc. (a copy of OpenWatcom v2 *wasm*)
 * linker (a copy of OpenWatcom v2 *wlink* and binary patcher tool to change
   the DOS MZ .exe output if *wlink* to an i86 a.out executable)
-* a small C library, libc with >58 functions implemented
+* a small C library, libc with ~58 functions implemented
   (custom i86 assembly code in [ssmcc.asm](ssmcc.asm)); most of this is
   original contribution by pts
 * C library headers (`#include` files)
 
 Limitations of ssmcc:
 
-* The most important limitation of the target systems supported by ssmcc is
-  the memory limit: 64 KiB for the code (actually, for [Minix
+* The most important limitation of the target systems supported by ssmcc is the
+  memory limit: 64 KiB for the code (actually, for [Minix
   i86](https://www.minix3.org/) it's only 0xff00 bytes), and 64 KiB
   (independently) for the data (actually, for
-  [ELKS](https://en.wikipedia.org/wiki/Embeddable_Linux_Kernel_Subset) it's
-  only 0xfff0 bytes). This memory limit is because pointers are stored in
-  16-bit registers. On other systems for i86 (such as ELKS (and DOS), it's
-  possible to use segment registers (and e.g. the large memory model) to use
-  up to 635 KiB of memory in a single process. ssmcc doesn't support these.
-  The bundled C library (libc) has only >50 functions. For example, most of
-  stdio (including printf(...) and scanf(...)) is missing. However,
-  malloc(...), realloc(...) and free(...) are included. ssmcc is a bit
-  slower than needed, because it compiles each C file twice (in the first
-  pass it just discovers the libc function dependencies). It would be faster
-  if the object files were reused between the two compile runs. ssmcc is a
-  bit slower than needed, because the tool executables are compressed with
-  UPX, and they get decompressed to memory each time a tool is invoked. For
+  [ELKS](https://en.wikipedia.org/wiki/Embeddable_Linux_Kernel_Subset) it's only
+  0xfff0 bytes). This memory limit is because pointers are stored in 16-bit
+  registers. On other systems for i86, such as ELKS (and DOS), it's possible to
+  use segment registers (and e.g. the large memory model) to use up to 635 KiB
+  of memory in a single process. ssmcc doesn't support these. The bundled C
+  library (libc) has only ~50 functions. For example, most of stdio (including
+  printf(...) and scanf(...)) is missing. However, malloc(...), realloc(...) and
+  free(...) are included. ssmcc is a bit slower than necessary for two reasons.
+  One, it compiles each C file twice (in the first pass it just discovers the
+  libc function dependencies). It would be faster if the object files were
+  reused between the two compile runs. Two, the tool executables are compressed
+  with UPX, and they get decompressed to memory each time a tool is invoked. For
   example, the C compiler executable program (wcc) is run (and thus gets
-  decompressed) separately for each C source file. The target system has to
-  be chosen at compile time. (It would be possible to create unified i86
-  a.out executable program files, which detect Minix i86 vs ELKS at startup
-  time.)
+  decompressed) separately for each C source file. The target system has to be
+  chosen at compile time. (It would be possible to create unified i86 a.out
+  executable program files, which detect Minix i86 vs ELKS at startup time.)
 
 It would be possible to overcome these limitations, but that would take much
 more effort than a small hobby project, and it would make the implementation
@@ -137,15 +134,15 @@ Most of the heavy lifting is done by the OpenWatcom v2 C compiler targeting
 i86 (16-bit Intel x86). ssmcc includes an unmodified copy of a few
 OpenWatcom v2 tools (owcc, wasm, wcc and wlink) precompiled for Linux i386.
 However, OpenWatcom v2 doesn't support either Minix i86 or ELKS as a target.
-The a.out executable file format for these system is generated by asking the
+The a.out executable file format for these systems is generated by asking the
 OpenWatcom v2 linker to produce a small-model DOS MZ .exe program file, and
 some post-processing (28 lines of Perl code) is done to convert this file to
-the relevant a.out format. Actually, thanks to the versatily configurability
+the relevant a.out format. Actually, thanks to the versatile configurability
 of the OpenWatcom v2 tools, if the program is compiled with a carefully
 crafted set of options, it's possible to change the first 0x20 bytes only:
 i.e. to replace the DOS MZ .exe header with the relevant a.out header.
 
-Some more details of generating the correct a.out header values:
+Some more details about generating the correct a.out header values:
 
 * We are lucky, because the layout of the executable image after the header
   is the same for DOS MZ .exe and a.out: code (segment _TEXT), then data
@@ -153,7 +150,7 @@ Some more details of generating the correct a.out header values:
   assembler and linker had to be configured to procuce the correct number of
   alignment bytes and count them properly.
 * Most of the a.out executable header fileds are constants, except for
-  a_text (sice of segment _TEXT), a_data (total size of segments CONST,
+  a_text (size of segment _TEXT), a_data (total size of segments CONST,
   CONST2 and _DATA) and a_bss (total size of segment _BSS). We can get the
   sum of a_text and a_data by looking at the DOS MZ .exe file size and
   subtracting the size of the header. We can get the sum of a_text, a_data
@@ -178,7 +175,7 @@ To reduce code size, a simple smart linking mechanism has also been added.
 It works like this:
 
 * The program source files are compiled twice, and the libc library files
-  are omitted on purpose in think phase of the first pass.. The error
+  are omitted on purpose in the think phase of the first pass.. The error
   messages of the linker are analyzed to figure out which symbols are
   missing. Typically these are the libc functions the program wants to use.
 * The list of missing symbols are converted a list of definition
@@ -201,9 +198,9 @@ It works like this:
   can be emitted. ssmcc does these merges to a small extent for Minix i86
   syscall wrappers, which are someimes quite long and repetitive.
 * This technique is not smart enough to detect unused printf(...) format
-  specifiers (e.g. no need to implement `'l'` if a *long* value is never
-  passed to printf(....), and the OpenWatcom v2 C compiler doesn't provide
-  the relevant hints.
+  specifiers. For example, no need to implement `'l'` if a *long* value is
+  never passed to printf(....), and the OpenWatcom v2 C compiler doesn't
+  provide the relevant hints.
 
 ## Historical significance
 
@@ -232,13 +229,13 @@ the 1980s (such as Venix, PC-ix and Coherent) on x86 also had the
 limitations of the small model. Microsoft Xenix was one of the first ones
 supporting large-model processes.
 
-Thus, until about 1990 it was imprtant to split larger Unix software to
+Thus, until about 1990 it was important to split larger Unix software to
 executables with less than 64 KiB of code. That explains why C compilers in
 the 1980s were split to 6 parts (driver, preprocessor, frontend, backend,
 assembler, linker).
 
 ELKS and Minix (up to version 2.0.4) are free and open source Unix-like
-operating systems still usable in 2026 which still run on the i86
+operating systems still usable in 2026. They still run on today's i86
 architecture. Thus they provide an excellent playground for C and assembly
 programmers to improve there skills of squeezing more functionality into a
 small code size.
