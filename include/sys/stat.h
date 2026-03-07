@@ -26,7 +26,7 @@
   typedef char _LIBC_assert_sizeof_struct_stat[sizeof(struct stat) == 30 ? 1 : -1];  /* No padding bytes for alignment. */
 #endif
 
-#ifdef __ELKS__  /* Correct struct stat in ELKS Dev86 0.16.21. */
+#ifdef __ELKS__  /* Correct struct stat in ssmcc libc. ELKS Dev86 0.16.21 used a 16-bit st_ino. */
   struct stat {
     dev_t st_dev;  /* 16 bits in ELKS 0.2.0--0.8.1. */
     ino_t st_ino;  /* 32 bits in ELKS 0.2.0, but in ELKS 0.2.0 it was 16 bits, even in `struct stat'. The libc functions stat(...), fstat(...) and lstat(...) always use 32 bits. */

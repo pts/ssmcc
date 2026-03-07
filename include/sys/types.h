@@ -44,7 +44,7 @@
 #ifdef __ELKS__  /* Correct sizes for struct stat in ELKS Dev86 0.6.21. */
   typedef unsigned short dev_t;
   typedef unsigned short gid_t;
-  typedef unsigned long  ino_t;  /* !! since which version of ELKS was it increased from 16 bits? not in 0.2.0 yet */
+  typedef unsigned long  ino_t;  /* 32 bits in ELKS 0.2.0, but in ELKS 0.2.0 it was 16 bits, even in `struct stat'. The libc functions stat(...), fstat(...) and lstat(...) always use 32 bits. */
   typedef unsigned short mode_t;
   typedef unsigned short nlink_t;
   typedef unsigned short uid_t;
