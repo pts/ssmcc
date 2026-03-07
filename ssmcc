@@ -95,7 +95,7 @@ for arg in "$@"; do
 done
 
 ## If not linking, then just run the compiler driver owcc.
-case "$dolink" in 0) owcc -bbegin -march=i86 -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char $cdefs "$@"; exit "$?" ;; esac
+case "$dolink" in 0) PATH="$tpath" "$owcc" $vflag -bbegin -march=i86 -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char $cdefs "$@"; exit "$?" ;; esac
 case "$ofn" in "") ofn=a.out; set x -o "$ofn" "$@"; shift ;; esac
 errfn="$ofn".ssmcc.err; case "$errfn" in [/_a-zA-Z0-9]*) ;; *) errfn=./"$errfn"; esac
 libcofn="$ofn".ssmcc.o; case "$libcofn" in [/_a-zA-Z0-9]*) ;; *) libcofn=./"$libcofn"; esac
