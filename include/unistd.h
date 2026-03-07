@@ -56,8 +56,8 @@ char *sbrk _LIBCP((int _incr));
 pid_t getpid _LIBCP((void));
 pid_t fork _LIBCP((void));
 
-int execv _LIBCP((char *_path, char *_argv[]));
-int execve _LIBCP((char *_path, char *_argv[], char *_envp[]));
+int execv _LIBCP((const char *_path, char *_argv[]));
+int execve _LIBCP((const char *_path, char *_argv[], char *_envp[]));
 
 #ifdef __ELKS__
 #  ifdef __WATCOMC__
