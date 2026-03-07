@@ -59,5 +59,18 @@ pid_t fork _LIBCP((void));
 int execv _LIBCP((char *_path, char *_argv[]));
 int execve _LIBCP((char *_path, char *_argv[], char *_envp[]));
 
+#ifdef __ELKS__
+#  ifdef __WATCOMC__
+    extern int  syscall0(int syscallnr);  /* A syscall taking 0 arguments. Nonstandard function. */
+#    pragma aux syscall0 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
+    extern int  syscall1(int syscallnr, int arg1);  /* A syscall taking 1 argument. Nonstandard function. */
+#    pragma aux syscall1 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
+    extern int  syscall2(int syscallnr, int arg1, int arg2);  /* A syscall taking 2 arguments. Nonstandard function. */
+#    pragma aux syscall2 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
+    extern int  syscall3(int syscallnr, int arg1, int arg2, int arg3);  /* A syscall taking 3 arguments. Nonstandard function. */
+#    pragma aux syscall3 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
+#  endif
+#endif
+
 #undef _LIBCP
 #endif  /* _UNISTD_H */
