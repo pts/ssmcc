@@ -18,7 +18,7 @@
 
 #ifndef _TIME_T
 #  define _TIME_T _TIME_T
-  typedef unsigned time_t;
+  typedef long time_t;
 #endif
 
 time_t time _LIBCP((time_t *_tloc));
