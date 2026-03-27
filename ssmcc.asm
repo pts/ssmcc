@@ -3358,10 +3358,19 @@ ENDIF
 ;
 ; Returns the length of the string pointed to by s.
 IFDEF U_strlen
+  IFNDEF U__strlenbx
+    U__strlenbx =
+  ENDIF
+ENDIF
+IFDEF U_strlen
 PUBLIC _strlen
 _strlen:
 	mov bx, sp
 	mov bx, [bx+2]  ; Argument s.
+	; Fall through to _strlenbx.
+ENDIF
+IFDEF U__strlenbx
+PUBLIC __strlenbx
 __strlenbx:  ; Other libc functions may call this entry point to get the length of the string starting at BX.
 	xchg bx, di  ; Save DI to BX.
 	mov cx, ds
