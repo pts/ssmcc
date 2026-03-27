@@ -88,14 +88,17 @@ fi
 export INCLUDE="$sysinc"  # Respected by OpenWatcom v2 C compiler (wcc) called by owcc.
 
 ## Figure out the output executable program filename ($ofn) from the command-line arguments ("$@"), and whether we are linking.
-next=; dolink=1; vflag=
+next=; dolink=1; vflag=; asmonly=1
 for arg in "$@"; do
-  case "$next" in o) ofn="$arg"; next= ;; esac
-  case "$arg" in -o) next=o ;; -o*) ofn="${arg#??}" ;; -[EcS]) dolink=0 ;; -v) vflag=-v ;; esac
+  case "$next" in o) ofn="$arg"; next=; arg= ;; esac
+  case "$arg" in -o) next=o ;; -o*) ofn="${arg#??}" ;; -[EcS]) dolink=0 ;; -v) vflag=-v ;; [^-]*.asm) ;; [^-]*.*) asmonly=0 ;; esac
 done
 
 ## If not linking, then just run the compiler driver owcc.
-case "$dolink" in 0) PATH="$tpath" "$owcc" $vflag -bbegin -march=i86 -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char $cdefs "$@"; exit "$?" ;; esac
+case "$dolink$asmonly" in
+ 00) PATH="$tpath" "$owcc" $vflag -bbegin -march=i86 -fno-stack-check -mcmodel=s -mabi=cdecl -fnostdlib -fsigned-char $cdefs "$@"; exit "$?" ;;
+ 01) PATH="$tpath" "$owcc" $vflag -bbegin -march=i86 $wasmdefs "$@"; exit "$?" ;;
+esac
 case "$ofn" in "") ofn=a.out; set x -o "$ofn" "$@"; shift ;; esac
 errfn="$ofn".ssmcc.err; case "$errfn" in [/_a-zA-Z0-9]*) ;; *) errfn=./"$errfn"; esac
 libcofn="$ofn".ssmcc.o; case "$libcofn" in [/_a-zA-Z0-9]*) ;; *) libcofn=./"$libcofn"; esac
