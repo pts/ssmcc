@@ -23,6 +23,8 @@
 ; * Not all libc system functions correspond directly to syscalls, for example wait(...) calls SYS_wait, and time(...) calls SYS_gettimeofday.
 ;
 
+.8086
+
 ; --- Segment setup.
 
 DOSSEG  ; Equivalent to `wlink op d'. It makes a difference on the segment order.
@@ -1920,8 +1922,8 @@ execve9:  ; TODO(pts): Unify the code in execve7 and execve9.
 	xchg cx, ax  ; Argument n.
 	mov si, [si]  ; Argument s2.
 	mov di, -2[bp]  ; Argument s1.
-	mov -2[bp], di
 	rep movsb  ; memcpy(...). Our _memcpy doesn't ruin ES needed by stosw.
+	mov -2[bp], di
 	pop di  ; Restore.
 	pop si  ; Restore.
 	inc si
