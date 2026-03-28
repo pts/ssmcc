@@ -27,6 +27,18 @@
   typedef int pid_t;
 #endif
 
+#ifdef __ELKS__
+#  ifndef _UID_T
+#    define _UID_T _UID_T
+    typedef unsigned short uid_t;
+#  endif
+
+#  ifndef _GID_T
+#    define _GID_T _GID_T
+    typedef unsigned short gid_t;
+#  endif
+#endif  /* __ELKS__ */
+
 #define STDIN_FILENO   0  /* file descriptor for stdin */
 #define STDOUT_FILENO  1  /* file descriptor for stdout */
 #define STDERR_FILENO  2  /* file descriptor for stderr */
@@ -71,6 +83,7 @@ int execve _LIBCP((const char *_path, char *_argv[], char *_envp[]));
 #    pragma aux syscall3 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
 #  endif  /* __WATCOMC__ */
   int chdir _LIBCP((const char *_path));
+  int fchown _LIBCP((int _fd, uid_t _owner, gid_t _group));
 #endif  /* __ELKS__ */
 
 #undef _LIBCP

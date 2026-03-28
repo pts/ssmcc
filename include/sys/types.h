@@ -50,12 +50,18 @@
 #    define _CC_T _CC_T
     typedef unsigned char cc_t;
 #  endif
+#  ifndef _UID_T
+#    define _UID_T _UID_T
+    typedef unsigned short uid_t;
+#  endif
+#  ifndef _GID_T
+#    define _GID_T _GID_T
+    typedef unsigned short gid_t;
+#  endif
   typedef unsigned short dev_t;
-  typedef unsigned short gid_t;
   typedef unsigned long  ino_t;  /* 32 bits in ELKS 0.2.0, but in ELKS 0.2.0 it was 16 bits, even in `struct stat'. The libc functions stat(...), fstat(...) and lstat(...) always use 32 bits. */
   typedef unsigned short mode_t;
   typedef unsigned short nlink_t;
-  typedef unsigned short uid_t;
 #endif
 
 #undef _LIBCP
