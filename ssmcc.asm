@@ -456,6 +456,11 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_ioctl
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 ;
 IFDEF DO_sesys3
 IFDEF U___sesys3
@@ -1023,6 +1028,16 @@ ENDIF
 	mov word ptr [__M+6], ax  ;  _M.m1_i2 = strlen(_newpath) + 1;
 	jmp _callx
 ENDIF  ; ELSE __ELKS__
+ENDIF
+
+; int ioctl(int _fd, unsigned _request, void *_arg);
+IFDEF U_ioctl
+IFDEF __ELKS__
+PUBLIC _ioctl
+_ioctl:
+	mov al, 54  ; SYS_ioctl.
+	jmp sesys3  ; TODO(pts): Move it closer to sesys3, to make it a short jump.
+ENDIF  ; __ELKS__
 ENDIF
 
 ; int isatty(int fd);
