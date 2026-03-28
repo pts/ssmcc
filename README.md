@@ -7,10 +7,9 @@ Minix i86 and ELKS. ssmcc is a cross-compiler: you compile your C program on
 Linux i386 or amd64, and you run them on Minix i86 or ELKS.
 
 ssmcc is designed to run on any modern Linux i386 or Linux amd64 system
-out-of-the-box (it doesn't matter which distro). It's self-contained: the
-repository has all the programs it needs precompiled and saved to the the
-tools/ directory.
-
+out-of-the-box (it doesn't matter which Linux distribution). It's
+self-contained: the repository has all the programs it needs precompiled and
+saved to the tools/ directory.
 
 Quick try on Linux (run the commands without the leading `$`):
 
