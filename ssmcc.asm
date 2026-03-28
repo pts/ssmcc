@@ -461,6 +461,11 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_chdir
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 ;
 IFDEF DO_sesys3
 IFDEF U___sesys3
@@ -1036,6 +1041,16 @@ IFDEF __ELKS__
 PUBLIC _ioctl
 _ioctl:
 	mov al, 54  ; SYS_ioctl.
+	jmp sesys3  ; TODO(pts): Move it closer to sesys3, to make it a short jump.
+ENDIF  ; __ELKS__
+ENDIF
+
+; int chdir _LIBCP((const char *_path));
+IFDEF U_chdir
+IFDEF __ELKS__
+PUBLIC _chdir
+_chdir:
+	mov al, 12  ; SYS_chdir.
 	jmp sesys3  ; TODO(pts): Move it closer to sesys3, to make it a short jump.
 ENDIF  ; __ELKS__
 ENDIF

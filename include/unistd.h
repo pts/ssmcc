@@ -69,8 +69,9 @@ int execve _LIBCP((const char *_path, char *_argv[], char *_envp[]));
 #    pragma aux syscall2 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
     extern int  syscall3(int syscallnr, int arg1, int arg2, int arg3);  /* A syscall taking 3 arguments. Nonstandard function. */
 #    pragma aux syscall3 "___sesys3" __parm [__ax]  /* Pass syscallnr in register AX. */
-#  endif
-#endif
+#  endif  /* __WATCOMC__ */
+  int chdir _LIBCP((const char *_path));
+#endif  /* __ELKS__ */
 
 #undef _LIBCP
 #endif  /* _UNISTD_H */
