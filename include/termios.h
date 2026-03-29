@@ -136,7 +136,7 @@
 #  define PENDIN  0040000
 #  define IEXTEN  0100000
 
-  /* tcsetattr() uses these */
+  /* tcsetattr() argument _optional_actions uses these */
 #  define TCSANOW    0
 #  define TCSADRAIN  1
 #  define TCSAFLUSH  2
@@ -149,6 +149,9 @@
     cc_t c_line;       /* line discipline */
     cc_t c_cc[NCCS];   /* control characters */
   };
+
+  int tcgetattr _LIBCP((int _fd, struct termios *_term));
+  int tcsetattr _LIBCP((int _fd, int _optional_actions, struct termios *_term));
 #endif
 
 #undef _LIBCP

@@ -471,6 +471,16 @@ IFNDEF DO_sesys3
 DO_sesys3 =
 ENDIF
 ENDIF
+IFDEF U_tcgetattr
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
+IFDEF U_tcsetattr
+IFNDEF DO_sesys3
+DO_sesys3 =
+ENDIF
+ENDIF
 ;
 IFDEF DO_sesys3
 IFDEF U___sesys3
@@ -494,7 +504,7 @@ IFDEF U_errno
 	neg ax
 	mov [_errno], ax
 ENDIF
-	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+	mov ax, -1
 sesys3ret:
 	ret
 ENDIF
@@ -1070,6 +1080,59 @@ _fchown:
 ENDIF  ; __ELKS__
 ENDIF
 
+; int tcgetattr(int _fd, struct termios *_term);
+IFDEF U_tcgetattr
+; ELKS PUBLIC int tcgetattr(_fd, _term)
+; int _fd;
+; struct termios *_term;
+; {
+;   return ioctl(_fd, TCGETS, _term);
+; }
+IFDEF __ELKS__
+PUBLIC _tcgetattr
+_tcgetattr:
+	mov bx, sp
+	mov cx, 5401h  ; IOCTL_ELKS.TCGETS.
+	mov dx, [bx+4]  ; Argument _term.
+	mov al, 54  ; SYS_ioctl.
+	jmp sesys1b  ; Also does BX := argument _fd.
+ENDIF  ; __ELKS__
+ENDIF
+
+; int tcsetattr(int _fd, int _optional_actions, struct termios *_term);
+IFDEF U_tcsetattr
+; ELKS PUBLIC int tcsetattr(_fd, _optional_actions, _term)
+; int _fd;
+; int _optional_actions;
+; struct termios *_term;
+; {
+;   switch (_optional_actions) {
+;    case TCSANOW: return ioctl(_fd, TCSETS, _term);     /* TCSETS  == 0x5402 == 0x5402 + TCSANOW. */
+;    case TCSADRAIN: return ioctl(_fd, TCSETSW, _term);  /* TCSETSW == 0x5403 == 0x5402 + TCSADRAIN. */
+;    case TCSAFLUSH: return ioctl(_fd, TCSETSF, _term);  /* TCSETSF == 0x5404 == 0x5402 + TCSAFLUSH. */
+;    default: errno = EINVAL; return -1;
+;   }
+; }
+IFDEF __ELKS__
+PUBLIC _tcsetattr
+_tcsetattr:
+	mov bx, sp
+	mov cx, [bx+4]  ; Argument _optional_actions.
+	cmp cx, 3
+	jnb tcsetattroaerr
+	add cx, 5402h  ; IOCTL_ELKS.TCSETS.
+	mov dx, [bx+6]  ; Argument _term.
+	mov al, 54  ; SYS_ioctl.
+	jmp sesys1b  ; Also does BX := argument _fd.
+tcsetattroaerr:
+IFDEF U_errno
+	mov word ptr [_errno], 22  ; EINVAL.
+ENDIF
+	mov ax, -1
+	ret
+ENDIF  ; __ELKS__
+ENDIF
+
 ; int isatty(int fd);
 IFDEF U_isatty
 PUBLIC _isatty
@@ -1181,7 +1244,7 @@ IFDEF U_errno
 	neg ax
 	mov [_errno], ax
 ENDIF
-	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+	mov ax, -1
 	cwd  ; DX := AX (== -1).
 lseekret:
 	ret
@@ -1286,7 +1349,7 @@ IFDEF U_errno  ; TODO(pts): `jmp sesyserr', or even `js sesyserr' if close enoug
 	neg ax
 	mov [_errno], ax
 ENDIF
-	mov ax, -1  ; Now we could set errno to -AX (for both Minix and ELKS).
+	mov ax, -1
 commonstatret:
 	ret
 ENDIF
